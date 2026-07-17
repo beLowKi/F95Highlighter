@@ -18,7 +18,7 @@ const resolveEntryPoints = (entrypoints: string[]) => {
 
 const publicFolder = "./public";
 
-await $`rm -rf ${outdir}`;
+await $`rm -r -f ${outdir}`;
 
 const ext = {
   html: ".html",

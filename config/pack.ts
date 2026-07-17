@@ -11,7 +11,10 @@ const packName = manifest.name.toLowerCase().replace(/[\s\W]+/g, '-');
 const { version } = manifest;
 
 const folderToCompress = './build';
-const outputArchive = `./release/${packName}-v${version}.zip`;
+const outDir = './release';
+
+await $`mkdir ${outDir}`;
+const outputArchive = `${outDir}/${packName}-v${version}.zip`;
 
 const zip = new AdmZip();
 

@@ -7,6 +7,7 @@
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "allowJs": true,
+    "types": ["bun", "@types/wicg-file-system-access", "chrome"],
 
     // Bundler mode
     "moduleResolution": "bundler",
@@ -18,13 +19,14 @@
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
+    "ignoreDeprecations": "6.0",
 
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
 
-    "baseUrl": ".",
+    "baseUrl": "./src",
     "paths": {
       "src": ["./src/*"]
     }

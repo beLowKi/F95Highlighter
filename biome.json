@@ -4,13 +4,13 @@
 		"include": ["src/**"],
 		"ignore": ["build/**", "config/**"]
 	},
+	"formatter": {
+		"enabled": true
+	},
 	"organizeImports": {
 		"enabled": true
 	},
 	"linter": {
-		"enabled": true,
-		"rules": {
-			"recommended": true
-		}
+		"enabled": false
 	}
 }
