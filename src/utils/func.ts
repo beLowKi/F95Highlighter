@@ -1,18 +1,77 @@
-import { MediaType, type SearchResult } from "types/data.ts";
+import { LocalStorage, MediaType, type SearchResult } from "types/data.ts";
+import type { GetUserLoggedInMessage } from "types/message";
 
 import {
+	DETAIL_SUFFIX_REGEX,
+	DLSITE_CODE_REGEX,
 	FORUM_REGEX,
 	INSIDE_BRACKETS_REGEX,
+	LOCAL_STORAGE_KEYS,
 	NUMBER_NO_PRECEDING_REGEX,
 	PART_REGEX,
 	SEARCH_TOKEN_BLACKLIST,
 	SEARCH_TOKEN_DELIMIT_REGEX,
+	SNAKE_SEGMENT_REGEX,
 	THREAD_LINK_MEDIA_ID_REGEX,
 	UPPER_CASE_SPLIT_REGEX,
 	VERSION_NUMBER_REGEX,
 	VOLUME_REGEX,
 	YEAR_MONTH_DAY_REGEX,
 } from "utils/const";
+
+
+/**
+ * Returns MediaDownloads from storage.
+ * 
+ * TBD on if this should just re-init downloads if they're missing from storage
+ * instead of every call to this func having to check if it returned null.
+ */
+export async function getUserDownloads(): Promise<LocalStorage['downloads'] | null> {
+	let storage: any;
+
+	// NOTE an Error is thrown when getting keys that don't exist
+	try {
+		storage = (await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS)).downloads;
+	} catch (error) {
+		console.error(`Attempted to get user downloads before it was initialized`);
+		return null;
+	}
+	
+	// Validating
+	const { data: downloads, error, success } = LocalStorage.shape.downloads.safeParse(storage);
+	if ( !success ) {
+		console.error(`Broken download storage:\n${error.message}\n${JSON.stringify(storage, null, 2)}`);
+		return null;
+	}
+
+	return downloads;
+}
+
+
+/**
+ * Sets Object value along a nested path--creating
+ * all necessary properties for it to exist.
+ * This modifies the given object and returns a reference to it.
+ */
+export function nestedSet(target: any, path: string, value: any): any {
+	const keys = path.split(".");
+
+	keys.reduce((acc, key, index) => {
+		// On last key, assign value
+		if (index === keys.length - 1) {
+			acc[key] = value;
+		} else {
+			if (!acc[key] || typeof acc[key] !== "object") {
+				acc[key] = {};
+			}
+		}
+
+		return acc[key];
+	}, target);
+
+	return target;
+}
+
 
 /**
  * Concatenates two regular expressions without duplicating flags.
@@ -25,16 +84,12 @@ import {
  *
  * @returns { RegExp }
  */
-export function concatRegex(
-	r1: RegExp,
-	r2: RegExp,
-	delimiter: string = "|",
-): RegExp {
+export function concatRegex(r1: RegExp, r2: RegExp, delimiter = "|"): RegExp {
 	if (!(r1 instanceof RegExp && r2 instanceof RegExp)) {
 		throw TypeError("'r1' and 'r2' must both be RegExp");
 	}
 
-	if (!(delimiter === "|" || delimiter === " ")) {
+	if ( !(delimiter === "|" || delimiter === " ") ) {
 		throw TypeError("'delimiter' must be either '|' or a space");
 	}
 
@@ -45,14 +100,51 @@ export function concatRegex(
 		.join("")
 		.replace(/(.)(?=.*\1)/g, "");
 
-	return new RegExp(r1.source + delimiter + r2.source, flags);
+	// console.log(`Combined flags ${r1.flags} and ${r2.flags} into ${flags}`);
+	
+	const out = new RegExp(r1.source + delimiter + r2.source, flags);
+		
+	// console.log(`concatenated ${r1} and ${r2} into ${out}`);
+
+	return out;
 }
+
+
+/**
+ * Returns a copy of a string converted to title format; i.e.,
+ * words aren't split by underscores or pascal casing and the first
+ * letter of every word is capitalized.
+ */
+export function toTitle(aString: string) : string {
+	// Combination of snake-case and camelCase regex
+	const re = concatRegex(SNAKE_SEGMENT_REGEX, UPPER_CASE_SPLIT_REGEX);
+	
+	// Splitting and formatting tokens
+	const tokens = aString.split(re)
+		// Filters nulls and empty strings
+		.filter(s => ( typeof s === 'string' && s.length > 0 ))
+		
+		// Capitalizing first character
+		.map(s => {
+			let formatted = s.at(0)!.toUpperCase();
+			if ( s.length > 1 ) {
+				formatted += s.slice(1).toLowerCase();
+			}
+
+			return formatted;
+		});
+	
+	// console.log(`Titleized ${aString} to ${tokens.join(' ')}`)  // DEBUG
+	
+	// Re-combining
+	return tokens.join(' ');
+}	
+
 
 /**
  * Returns if user is logged in to F95
- * @returns { boolean }
  */
-export async function userLoggedIn() {
+export async function userLoggedIn(): Promise<boolean> {
 	// 'xf_user' cookie is a session tag I believe;
 	// when missing, that means the user isn't logged in
 	const userSession = await chrome.cookies.get({
@@ -63,12 +155,14 @@ export async function userLoggedIn() {
 	return userSession !== undefined;
 }
 
+
 /**
  * Prompts user to login to F95.
  */
 export async function promptLogin(): Promise<boolean> {
 	throw new Error("Not implemented");
 }
+
 
 /**
  * Converts the given name to a valid search query.
@@ -78,53 +172,36 @@ export function prepSearchQuery(name: string): string {
 		throw new TypeError("'name' must be a string");
 	}
 
-	// Pre-delimit splitting regex
-	const preProcess = [
+	// console.log('Prepping search query for ', name);
+	
+	// Matches a bunch of extra stuff that isn't
+	// part of a Media's title
+	const filterMatch = [
 		NUMBER_NO_PRECEDING_REGEX,
-		YEAR_MONTH_DAY_REGEX,
-		VERSION_NUMBER_REGEX,
-		PART_REGEX,
-		VOLUME_REGEX,
-	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
+		DLSITE_CODE_REGEX,
+		DETAIL_SUFFIX_REGEX
+	].reduce((prev, curr) => concatRegex(prev, curr, "|"));
 
-	// Fully tokenizes string
-	const postProcess = [
+	// Common ways that file names split tokens
+	const delimitMatch = [
 		SEARCH_TOKEN_DELIMIT_REGEX,
 		UPPER_CASE_SPLIT_REGEX,
 	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
 
-	const cleaned = name.replaceAll(preProcess, " ").replaceAll(postProcess, " ");
+	let cleaned = name.replaceAll(filterMatch, "");
+	// console.log(`Post filter match: ${cleaned}`);
+	
+	cleaned = cleaned.replaceAll(delimitMatch, ' ');
+	// console.log('Post delimit ', cleaned);
 
-	// Gets all tokens up until first blacklisted
-	// token since they're usually at the end of file names
-	const tokens = [];
-
-	for (const piece of cleaned.split(" ")) {
-		// Removing leading or trailing spaces
-		const token = piece.trim().toLowerCase();
-
-		// Filtering blacklisted tokens,
-		// dates, and version numbers because they typically
-		// aren't in the actual thread title.
-		// Also removes empty strings
-		if (token.length <= 0) {
-			continue;
-		}
-
-		if (SEARCH_TOKEN_BLACKLIST.has(token)) {
-			break;
-		}
-
-		// Lower-casing final output
-		tokens.push(token);
-		if (!isNaN(Number(token))) {
-			break;
-		}
-	}
+	const tokens = cleaned.split(' ')
+		.filter(s => !!s && s.length > 0)
+		.map(s => s.trim().toLowerCase());
 
 	// Joins tokens in the format that search queries expect
 	return tokens.join("+");
 }
+
 
 /**
  * Extracts from search results page the titles and forums of each Media.
@@ -137,7 +214,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 	const resultsContainer = page.querySelector("ol");
 	if (resultsContainer === null) {
 		console.error("Failed to find search results container");
-		return null;
+		return null;	
 	}
 
 	// Each <li> contains a <div class="contentRow"> which
@@ -193,9 +270,9 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 			if (text === null || text === undefined) continue;
 
 			// Breaks on first detail
-			if (INSIDE_BRACKETS_REGEX.test(text)) {
-				break;
-			}
+			// if (INSIDE_BRACKETS_REGEX.test(text)) {
+			// 	break;
+			// }
 
 			// Skipping <span> tags which have prefixes like
 			// collection, VN, or abandoned
@@ -239,12 +316,14 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 	return searchResults;
 }
 
+
 /**
  * Returns if the given value is a string array
  */
 export function isStringArr(arr: any): arr is string[] {
-	return arr instanceof Array && arr.every((i) => typeof i === "string");
+	return Array.isArray(arr) && arr.every((i) => typeof i === "string");
 }
+
 
 /**
  * Calculates the Jaro similarity between 2 strings.
@@ -268,6 +347,7 @@ export function jaroSimilarity(str1: string, str2: string): number {
 
 	// Exits early if either is empty
 	if (s1 <= 0 || s2 <= 0) {
+		// console.log(`Empty string in jaro: s1: ${str1} s2: ${str2}`);
 		return 0.0;
 	}
 
@@ -312,14 +392,15 @@ export function jaroSimilarity(str1: string, str2: string): number {
 
 	// Exits early on 0 matches
 	if (m <= 0) {
-		console.error("Zero matches");
+		// console.error("Zero matches");
 		return 0.0;
 	}
 
 	// Final calculation
 	const t = numTrans / 2.0;
-	return (1.0 / 3.0) * (m / s1 + m / s2 + (m - t) / m);
+	return (1.0 / 3.0) * ( (m / s1) + (m / s2) + ((m - t) / m) );
 }
+
 
 /**
  * Returns the Jaro-Winkler similarity of 2 strings.
@@ -329,7 +410,7 @@ export function jaroSimilarity(str1: string, str2: string): number {
 export function jaroWinklerSimilarity(
 	str1: string,
 	str2: string,
-	p: number = 0.1,
+	p = 0.1,
 ): number {
 	// NOTE jaroSimilarity throws on invalid str1 and str2
 	// so those checks don't need to exist here
@@ -345,10 +426,268 @@ export function jaroWinklerSimilarity(
 			++l;
 			continue;
 		}
-
 		break;
 	}
 
 	// Final calculation
-	return jar + p * l * (1 - jar);
+	const out = jar + p * l * (1 - jar);
+	// console.log(`JaroWinkler similarity of ${str1} and ${str2}: ${out}`);  // DEBUG
+	
+	return out;
+}
+
+
+/**
+ * Returns indexes of all occurrances of a substring in another string.
+ * https://stackoverflow.com/a/3410557/32075069
+ */
+export function getIndexesOfStr(searchStr: string, str: string): number[] {
+	let searchStrLen = searchStr.length;
+	if ( searchStrLen <= 0 ) {
+		return [];
+	}
+	
+	const indices: number[] = [];
+	let startIndex = 0, index;
+
+	while ( (index = str.indexOf(searchStr, startIndex)) > -1 ) {
+		indices.push(index);
+		startIndex = index + searchStrLen;
+	}
+
+	return indices;
+}
+
+
+/**
+ * Returns all the indexes of the given item within an array
+ */
+export function getIndexesOfArr(finding: any, arr: any[]): number[] {
+	const indices: number[] = [];
+
+	for ( const [index, item] of arr.entries() ) {
+		if ( item === finding ) {
+			indices.push(index);
+		};
+	}
+
+	return indices;
+}
+
+
+/**
+ * Returns indexes of all items in an array 
+ * which satisfy the given predicate.
+ */
+export function findIndexAll<T extends any>(
+	pred: (x: T) => boolean, 
+	arr: T[]
+): number[] {
+	return arr.reduce(
+		(prev, curr, index) => ( pred(curr) ? [...prev, index] : prev ), 
+		new Array<number>()
+	);
+}
+
+
+/**
+ * Returns a map of keyword occurrances in a string; e.g.,
+ * { foo: [0, 1], bar: [8] }.
+ * These numbers represent token index **NOT** string index. 
+ */
+export function keywordMap(
+	str: string, 
+	keywords: Set<string>, 
+	tokenizer: string | RegExp = ' ',
+): Map<string, number[]> {
+
+	// Tokenizing
+	const tokens = str.split(tokenizer)
+		.filter(t => typeof t === 'string' && t.length > 0)
+		.map(t => t.toLowerCase());
+	// console.log(`Tokens of ${str}:\n${JSON.stringify(tokens)}`);
+	
+	// Creating map
+	const occurrences = new Map<string, number[]>();
+
+	for (const word of keywords) {
+		// TODO this makes this function less modular but it's 
+		// how I need it for this extension. It would technically be better
+		// if there were function param(s) for how exact token matching should be.
+		// const re = new RegExp(word, 'gi');
+		// occurrences.set(word, findIndexAll((x: string) => re.test(x), tokens));
+		occurrences.set(word, getIndexesOfArr(word, tokens));
+	}
+
+	return occurrences;
+}
+
+
+/**
+ * Scores how well a string matches a list of keywords
+ * as determined by the following:
+ * 
+ * coverage 	- Keywords present in string
+ * order		- Correctly-ordered keyword pairs 
+ * proximity 	- Present keyword pairs regardless of order 
+ * frequency	- Number of times keywords appear (with a per-word cap)
+ * 
+ * @param keywords List of keywords **IMPORTANT** order matters for keyword pairings
+ * @param aString String to score
+ * @param options Tuning parameters
+ * 
+ * @returns Number between [0.0, 1.0] representing a percentage
+ */
+export function keywordScore(
+	keywords: string[], 
+	aString: string,
+	options = {
+		weights: {
+			coverage: 	0.35,
+			order:		0.25,
+			proximity:	0.2,
+			frequency:	0.2
+		},
+		maxKeywordScore: 3,
+		roundTo: 2
+	},
+): number {
+	// console.log(`Proximity matching keywords ${JSON.stringify(keywords)} against string ${aString}`);
+	
+	// Validating options
+	const { weights, maxKeywordScore, roundTo } = options;
+	
+	const weightSum = Object.values(weights).reduce((p, c) => ( p + c ));
+	if ( Math.abs(1.0 - weightSum) > Number.EPSILON ) {
+		throw new Error(`Invalid weights; must add to 1.0:\n${JSON.stringify(weights, null, 2)}`);
+	}
+
+	if ( roundTo <= 0 ) {
+		throw new Error(`Invalid 'roundTo'; must be positive number`);
+	}
+
+	if ( maxKeywordScore <= 0 ) {
+		throw new Error(`Invalid 'maxKeywordScore'; must be positive number`);
+	}
+	
+	// Creating a lookup table of keyword occurrences
+	const keywordOccurrences = keywordMap(aString, new Set(keywords));
+	// console.log('Keyword occurances:\n', JSON.stringify(Object.fromEntries(keywordOccurrences.entries()), null, 2));
+	
+	let frequencyScore = 0, numOrderedPairs = 0, numAdjacentPairs = 0;
+	
+	for (const [word, occurrences] of keywordOccurrences) {
+
+		// Doesn't add to score if no occurrences
+		if ( occurrences.length <= 0 ) {
+			continue;
+		}
+		
+		const keywordIndex = keywords.indexOf(word);
+		
+		// Checking order + proximity 
+		// Only checks adjacency in one direction
+		// to prevent the same pair scoring twice
+		const next = ( keywordIndex < keywords.length )
+			? keywords.at(keywordIndex + 1)
+			: undefined;
+		
+		if ( !!next && keywordOccurrences.has(next) ) {
+			const nextWordOccurrences = keywordOccurrences.get(next)!;
+
+			// Checking for at least one adjacent 
+			// and correctly ordered pair of keywords
+			let foundAdjacent = false, foundOrdered = false;			
+			for (const index of occurrences) {
+				for (const nextIndex of nextWordOccurrences) {
+					const distance = ( nextIndex - index );
+
+					if ( Math.abs(distance) <= 1 ) {
+						if ( distance > 0 ) foundOrdered = true;
+						foundAdjacent = true;
+					}
+
+					if ( foundOrdered && foundAdjacent ) {
+						break;
+					}
+				}
+
+				if ( foundOrdered && foundAdjacent ) {
+					break;
+				}
+			}
+
+			if ( foundAdjacent ) numAdjacentPairs++;
+			if ( foundOrdered ) numOrderedPairs++;
+		}
+		
+		// This increases score based on how many times the keyword appears.
+		// The bonus-per-keyword is capped.
+		frequencyScore += Math.min(occurrences.length, maxKeywordScore) / ( keywordOccurrences.size * maxKeywordScore );
+	}
+
+	// console.log(`Results:\n${JSON.stringify({ coverage, orderScore, proximityScore, frequencyScore }, null, 2)}`);
+	
+	// Calculating normalized score
+	const coverage = keywordOccurrences.size / keywords.length;
+	const numPairs = ( keywords.length - 1 );
+
+	const orderScore = ( numPairs > 0 )
+		? numOrderedPairs / numPairs
+		: 1.0;
+	
+	const proximityScore = ( numPairs > 0 )
+		? numAdjacentPairs / numPairs
+		: 1.0;
+	
+	const score = weights.coverage * coverage +
+		weights.order * orderScore +
+		weights.proximity * proximityScore +
+		weights.frequency * frequencyScore;
+
+	return Number(score.toPrecision(roundTo));
+}
+
+
+/**
+ * Searches for Array element that satisfies predicate
+ * using binary search. Assumes the array is pre-sorted.
+ * 'predicate' should return a negative if target is less
+ * than the given value, a positive if it's greater, and 0
+ * on a match.
+ *
+ * @param arr Array of items
+ * @param predicate Callback function checking for a match
+ * @returns Full value of first match or undefined if not found
+ */
+export function binSearch<T>(
+	arr: T[],
+	predicate: (value: T, index: number, obj: T[]) => number,
+): T | undefined {
+	// ref: https://www.geeksforgeeks.org/dsa/binary-search/
+	let low = 0;
+	let high: number = arr.length - 1;
+	let mid: number;
+
+	while (high >= low) {
+		mid = low + Math.floor((high - low) / 2.0);
+
+		const value: T = arr.at(mid)!;
+
+		// Element found at middle
+		if (predicate(value, mid, arr) === 0) {
+			return value;
+		}
+
+		// Element is to the left
+		if (predicate(value, mid, arr) < 0) {
+			high = mid - 1;
+
+			// Element is to the right
+		} else {
+			low = mid + 1;
+		}
+	}
+
+	return undefined;
 }

@@ -1,13 +1,35 @@
-import { type Media, MediaDownload, SearchResult, Settings } from "types/data";
-import { BackgroundActions, Message, PopupActions } from "types/message";
-import { BASE_SEARCH_URL, EX_SEARCH_PARAMS } from "utils/const";
 import {
-	isStringArr,
-	jaroWinklerSimilarity,
+	ConflictResolutionPolicy,
+	LocalStorage,
+	type Media,
+	MediaDownload,
+	type MediaDownloadConflict,
+	SearchResult,
+	type Settings,
+} from "types/data";
+import { 
+	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, Message, 
+	type GetConflictPolicyMessage, type ScrapeSearchResultsMessage, type ShowImportResultsMessage 
+} from "types/message";
+
+import {
+	BASE_SEARCH_URL,
+	EX_SEARCH_PARAMS,
+	LOCAL_STORAGE_KEYS,
+	SEARCH_TOKEN_DELIMIT_REGEX,
+	SNAKE_SEGMENT_REGEX,
+	UPPER_CASE_SPLIT_REGEX,
+} from "utils/const";
+
+import {
+	concatRegex,
 	prepSearchQuery,
 	promptLogin,
+	keywordScore,
 	userLoggedIn,
+	getUserDownloads,
 } from "utils/func";
+
 
 /**
  * Searches for the given name in F95
@@ -41,16 +63,16 @@ async function searchMediaName(
 	// Reading search results
 	const html = await res.text();
 
-	const message: Message = {
-		action: PopupActions.SCRAPE_SEARCH_RESULTS,
+	const message: ScrapeSearchResultsMessage = {
+		action: 'scrape-search-results',
 		payload: html,
 	};
 
-	let searchResults = await chrome.runtime.sendMessage(message);
+	const searchResults = await chrome.runtime.sendMessage(JSON.stringify(message));
 
 	// Validating return
 	if (!(searchResults instanceof Array) || searchResults.length <= 0) {
-		console.error("Failed to find search results");
+		console.error(`Failed to find search results for ${name}`);
 		return null;
 	}
 
@@ -73,25 +95,36 @@ async function searchMediaName(
 
 	// Finding the search result whose title
 	// is the most similar to 'name'
-
-	// TODO const p = getSetting('prefix scale ratio');
-	// then pass p to jaroWinklerSimilarity
-
 	let bestGuess: SearchResult | undefined;
 	let bestGuessCertainty = 0.0;
 
 	for (const result of sample) {
-		const certainty = jaroWinklerSimilarity(
-			query,
-			prepSearchQuery(result.title),
+		
+		// Preparing title for keyword scoring
+		// by removing delimiting characters like (), [], & /
+		// and putting spaces between snake and camel-case splits.
+		// This makes the tokens extracted from the title easier to
+		// match with 'query'
+		const re = [
+			UPPER_CASE_SPLIT_REGEX,
+			SNAKE_SEGMENT_REGEX
+		].reduce((p, c) => concatRegex(p, c, '|'));
+
+		const prepped = result.title
+			.replaceAll(SEARCH_TOKEN_DELIMIT_REGEX, '')
+			.replaceAll(re, ' ');
+		
+		const certainty = keywordScore(
+			query.split('+'), 
+			prepped
 		);
 
-		if (bestGuess === undefined || bestGuessCertainty < certainty) {
+		if ( bestGuess === undefined || bestGuessCertainty < certainty ) {
 			bestGuess = result;
 			bestGuessCertainty = certainty;
 		}
 	}
-
+	
 	if (!!!bestGuess) {
 		console.error(
 			"Something went horribly wrong; bestGuess is not defined when it should be",
@@ -109,6 +142,7 @@ async function searchMediaName(
 	return { media, certainty: bestGuessCertainty };
 }
 
+
 /**
  * Attempts to create a MediaDownload from the given directory item name.
  * Return also includes whether a download for this Media already exists.
@@ -117,6 +151,8 @@ async function searchMediaName(
  * to find which ones 'name' matches most with.
  */
 async function getMediaDownload(name: string): Promise<MediaDownload | null> {
+	// console.log(`Searching for media matching ${name}`);
+	
 	// Attempting to find matching Media
 	const result = await searchMediaName(name);
 	if (result === null) {
@@ -124,16 +160,16 @@ async function getMediaDownload(name: string): Promise<MediaDownload | null> {
 		return null;
 	}
 
-	console.log(JSON.stringify(result, null, 2));
-
-	// return new MediaDownload(name, result.media.mediaId, result.certainty);
+	// console.log(JSON.stringify(result, null, 2));
 
 	return {
 		name,
 		mediaId: result.media.mediaId,
 		certainty: result.certainty,
+		deleted: false,
 	};
 }
+
 
 /**
  * Peforms full 'import-downloads' action--updating
@@ -142,100 +178,253 @@ async function getMediaDownload(name: string): Promise<MediaDownload | null> {
  * @param items List of directory item names
  */
 async function importDownloads(items: string[]): Promise<void> {
-	// const downloads: MediaDownload[] = [];
-
-	const imports: Record<number, MediaDownload[]> = {};
-	const existingDownloads: Record<number, MediaDownload> = {};
-
+	// This can be null if downloads haven't been initialized yet
+	const downloads = await getUserDownloads();
+	if ( downloads === null ) {
+		throw new Error('Import failed due to uninitialized downloads');
+	}
+	
+	// console.log(`Downloads pre-import:\n${JSON.stringify(downloads, null, 2)}`);
+		
+	// Collecting new downloads
+	const newMediaIds = new Set<number>();
+	const conflicts: Record<number, MediaDownloadConflict> = {};
+	const failedItems = new Set<string>();
+	
 	try {
-		for await (const download of items.map(getMediaDownload)) {
+		const foundDownloads = await Promise.all(items.map(getMediaDownload));
+
+		for (const [index, download] of foundDownloads.entries()) {
+
+			// Updating failed items
 			if (download === null) {
+				failedItems.add(items.at(index)!);
+				continue;
+			};
+
+			const mediaId = download.mediaId;
+
+			// New media
+			if ( !( mediaId in downloads ) ) {
+				newMediaIds.add(mediaId);
+				downloads[mediaId] = download;
 				continue;
 			}
 
-			// Pushes all scanned duplicates together
-			// they'll be handled later
-			if (!(download.mediaId in imports)) {
-				imports[download.mediaId] = [];
+			// New conflicts
+			if ( !( mediaId in conflicts ) ) {
+				conflicts[mediaId] = {
+					mediaId,
+					new: [download]
+				};
+				
+				continue;
 			}
 
-			imports[download.mediaId].push(download);
-
-			// Checking for in-storage duplicate
-			try {
-				const rec = await chrome.storage.local.get(`${download.mediaId}`);
-				const {
-					data: inStoreDuplicate,
-					error,
-					success,
-				} = await MediaDownload.safeParseAsync(rec);
-				if (!success) {
-					console.error(
-						`Big problem; stored MediaDownload failed its model:\n${error.message}`,
-					);
-					return;
-				}
-
-				existingDownloads[inStoreDuplicate.mediaId] = inStoreDuplicate;
-
-				// Promise rejects if key, i.e., a
-				// duplicate dowload, doesn't exist.
-			} catch (error) {}
+			// Adding to existing conflict
+			conflicts[mediaId].new.push(download);
 		}
+
 	} catch (error) {
 		console.error(`Error importing downloads: ${error}`);
 		return;
 	}
 
-	/** Now we got all these MediaDownloads
-	 *
-	 *      1) Check for duplicates
-	 *          a) build list of { new: MediaDownload, old: MediaDownload }
-	 *          for downlaods with duplicate mediaIds
-	 *
-	 *      2) If there are any duplicates, message popup to prompt user
-	 *      on how duplicates should be handled
-	 *          a) could be a default setting for this
-	 *          b) maybe gets set with "Never ask again" checkbox
-	 *
-	 *      3) Deal with duplicates accordingly
-	 *
-	 *      4) Update database with remaining downloads
-	 *
-	 *      5) Message popup that import was a success/failure
-	 *
-	 *      6) We're done
-	 */
+	// TODO check settings for 'default-conflict-resolution-policy'
+	// and have that be the init value instead
+	let conflictPolicy: ConflictResolutionPolicy = 'KEEP_MOST_CERTAIN';
+	
+	// Triggers popup prompt asking user how to handle duplicates
+	if ( Object.keys(conflicts).length > 0 ) {
+		const message: GetConflictPolicyMessage = {
+			action: 'get-conflict-policy',
+			payload: conflicts,
+		};
 
-	// Checking for duplicates either to db entries
-	// or downloads within the same scan.
+		// Collecting conflict policy
+		const policy = await chrome.runtime.sendMessage(JSON.stringify(message));
+		
+		// User cancelled or otherwise failed to get 
+		// conflict policy so we cancel import
+		if ( !(!!policy) ) {
+			console.log('Background received null | undefined conflict policy');
+			return;
+		}
+		
+		// Parsing
+		const {
+			data: parsed,
+			error,
+			success,
+		} = ConflictResolutionPolicy.safeParse(policy);
 
-	// Checking current scan
-	// TODO
+		// Big problem; an invalid policy or 
+		// completely different type was received
+		if (!success) {
+			console.error(
+				"Internal Error: popup failed to respond with" +
+					` valid conflict resolution policy:\n${error.message}`,
+			);
+		} else {
+			conflictPolicy = parsed;
+		}
+	}
 
-	// Checking storage
-	// TODOs
+	// Handling conflicts
+	// console.log(`Conflict policy: ${conflictPolicy}`);
+	// console.log(`Conflicts:\n${JSON.stringify(conflicts, null, 2)}`);
+	
+	// Tracks which media downloads have been updated
+	const updatedMediaIds = new Set<number>();
 
-	/**
-	 * "(X) folders approximated to the same Media"
-	 *      ... then list out those folders' name
-	 *
-	 * "How would you like to proceed?"
-	 *      ... skip (keeps earliest entry) or overwrite (keeps latest)
-	 *
-	 * could also have a "Do the same for on-file duplicates" checkbox
-	 *
-	 * Something something when importDuplicate is also storedDuplicate
-	 *      Popup compares on-file download to scanned one(s)
-	 *      Buttons to select which one to keep
-	 *
-	 * Collect this as DuplicateResolvePolicy or something
-	 *
-	 * switch ... do the policy
-	 *
-	 * continue updating storage as normal
-	 */
+	switch (conflictPolicy) {
+		// Keeps the latest download, so whichever
+		// item happened to be first in ordering
+		case "SKIP":
+			for (const [mediaId, conflict] of Object.entries(conflicts) ) {
+				const choice = (!!conflict.existing)
+					? conflict.existing
+					: conflict.new.at(0);
+				
+				// Invalid conflict created with
+				// no existing or new downloads
+				if ( choice === undefined ) {
+					console.error(
+						`Conflict on Media ID ${mediaId} with no new or existing downloads:` +
+						`\n${JSON.stringify(conflict, null, 2)}`
+					);
+					continue;
+				}
+					
+				downloads[Number(mediaId)] = choice;
+			}
+			break;
+
+		// Uses download with highest certainty
+		case "KEEP_MOST_CERTAIN":
+			for ( const [mediaId, conflict] of Object.entries(conflicts) ) {
+				const options: MediaDownload[] = 
+					[conflict.existing, ...conflict.new].filter(d => !!d);
+
+				const choice = options.reduce(
+					(prev, curr) => (curr.certainty > prev.certainty) ? curr : prev
+				);
+
+				// Invalid conflict created with
+				// no existing or new downloads
+				if ( choice === undefined ) {
+					console.error(
+						`Conflict on Media ID ${mediaId} with no new or existing downloads:` +
+						`\n${JSON.stringify(conflict, null, 2)}`
+					);
+					continue;
+				}
+				
+				if ( choice !== conflict.existing ) {
+					updatedMediaIds.add(Number(mediaId));
+				}
+				
+				downloads[Number(mediaId)] = choice;
+			}
+			break;
+
+		// Keeps latest item
+		case "REPLACE":
+			for (const [mediaId, conflict] of Object.entries(conflicts)) {
+				const options: MediaDownload[] = 
+					[conflict.existing, ...conflict.new].filter(d => !!d);
+				
+				const choice = options.at(-1);
+				
+				// Invalid conflict created with
+				// no existing or new downloads
+				if ( choice === undefined ) {
+					console.error(
+						`Conflict on Media ID ${mediaId} with no new or existing downloads:` +
+						`\n${JSON.stringify(conflict, null, 2)}`
+					);
+					continue;
+				}
+
+				if ( choice !== conflict.existing ) {
+					updatedMediaIds.add(Number(mediaId));
+				}
+
+				downloads[Number(mediaId)] = choice;
+			}
+			break;
+
+		default:
+			throw new Error(
+				`Unhandled ConflictResolutionPolicy received: ${conflictPolicy}`,
+			);
+	}
+	
+	// DEBUG
+	// console.log(`Final downloads:\n${JSON.stringify(downloads, null, 2)}`);
+	
+	// Adding downloads to storage
+	const importResultsMessage: ShowImportResultsMessage = {
+		action: 'show-import-results',
+		payload: { success: false, failedItems: [] },
+	};
+
+	try {
+		await chrome.storage.local.set({
+			[LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads,
+		});
+
+		importResultsMessage.payload = {
+			success: 			true,
+			numScanned: 		items.length,
+			newMediaIds: 		Array.from(newMediaIds),
+			updatedMediaIds: 	Array.from(updatedMediaIds),
+			failedItems: 		Array.from(failedItems)
+		}
+		
+	} catch (error) {
+		console.error(`Error saving imports: ${error}`);
+	}
+
+	// DEBUG
+	// console.log(`import results in background:\n${JSON.stringify(
+	// 	importResultsMessage.payload, 
+	// 	null, 
+	// 	2
+	// )}`);
+
+	// Triggers popup display for import results
+	await chrome.runtime.sendMessage(JSON.stringify(importResultsMessage));
 }
+
+
+/**
+ * Clears known downloads
+ */
+async function clearKnownDownloads(): Promise<void> {
+	// console.log('Clearing downloads');
+	
+	await chrome.storage.local.set({
+		[LOCAL_STORAGE_KEYS.DOWNLOADS]: {}
+	});
+
+	// DEBUG
+	// const downloads =
+	// 	await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS);
+	
+	// console.log(`Downloads post clear:\n${downloads}`)
+}	
+
+
+/**
+ * TBD/TODO 
+ * This would scan downloads and flag any stored download
+ * missing from scan as deleted
+ */
+async function syncDownloads() {
+
+}
+
 
 /**
  * Saves user settings to storage.
@@ -256,6 +445,7 @@ async function saveSettings(settings: Settings): Promise<boolean> {
 	throw new Error("Not implemented");
 }
 
+
 /**
  * Returns user settings as Record<string, any>
  */
@@ -263,6 +453,7 @@ async function getSettings(): Promise<Settings> {
 	// TODO
 	throw new Error("Not implemented");
 }
+
 
 /**
  * Triggers when extension is first installed or updated
@@ -274,13 +465,38 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	//     url: 'options.html',
 	//   });
 	// }
+
+	// TMP
+	// await chrome.storage.local.clear();
+	
+	// Initializing storage
+	// 'get' promises reject when that key doesn't exist
+	for (const key of Object.values(LOCAL_STORAGE_KEYS)) {
+		try {
+			const value = await chrome.storage.local.get(key);
+			if ( typeof value[key] === 'undefined' ) {
+				await chrome.storage.local.set({[key]: {}});
+			} else {
+				// console.log(`Pre-initialized ${key} found:\n${JSON.stringify(value, null, 2)}`);
+			}
+		} catch (error) {
+			console.error(`Error initializing storage: ${error}`);
+		}
+	}
+
+	// DEBUG
+	const storage = await chrome.storage.local.get();
+	console.log(`Initialized storage to ${JSON.stringify(storage, null, 2)}`);
 });
+
 
 /**
  * Native message listener; mainly just stuff coming from the popup
  */
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
-	const { data: msg, error, success } = Message.safeParse(message);
+	console.log('Message received in background');
+	
+	const { data: { action, payload } = {}, error, success } = Message.safeParse(JSON.parse(message));
 	if (!success) {
 		console.error(
 			`Popup received incorrectly formatted message:\n${error.message}`,
@@ -288,29 +504,42 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 		return;
 	}
 
-	switch (msg.action) {
+	switch (action) {
 		// Importing a list of downloads
-		case BackgroundActions.IMPORT_DOWNLOADS:
-			const parsed = JSON.parse(msg.payload);
+		case ImportDownloadsMessage.shape.action.value:			
+			// Validating payload
+			const { 
+				data: imports, 
+				error, 
+				success 
+			} = ImportDownloadsMessage.shape.payload.safeParse(payload);
 
-			if (!isStringArr(parsed)) {
-				console.error(
-					`import-downloads actions expected string[] but recieved ${typeof parsed}`,
-				);
+			if ( !( success && !!imports ) ) {
+				console.error(`Error with ${action} payload: ${error!.message}`);
 				sendResponse(false);
 				return;
 			}
 
+			// console.log('background beginning import')
 			try {
-				await importDownloads(parsed);
+				await importDownloads(imports);
+			
 			} catch (error) {
 				console.error(`Unexpected error importing downloads: ${error}`);
 				sendResponse(false);
-				return;
 			}
 
 			break;
 
+		case ClearKnownDownloadsMessage.shape.action.value:
+			try {
+				await clearKnownDownloads();
+			} catch (error) {
+				console.error(`Error clearing downloads: ${error}`);
+			}
+			
+			break;
+		
 		default:
 			console.error(
 				"Missing or invalid action in message" +

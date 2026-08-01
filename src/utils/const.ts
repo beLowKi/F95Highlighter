@@ -1,3 +1,25 @@
+import type { ConflictResolutionPolicy } from "types/data";
+import { concatRegex } from "./func";
+
+/**
+ * Keys used for local storage
+ */
+export const LOCAL_STORAGE_KEYS = {
+	DOWNLOADS: "downloads",
+	SETTINGS: "settings",
+} as const;
+
+/**
+ * Descriptions of every conflict resolution policy.
+ * These are mostly used by the dialogue asking the user
+ * how duplicate downloads should be handled
+ */
+export const CONFLICT_POLICY_DESCRIPTIONS: Record<ConflictResolutionPolicy, string> = {
+	SKIP: "Skips duplicates; uses first new download if no existing one.",
+	KEEP_MOST_CERTAIN: "Uses the download that matched its f95 media with the highest confidence.",
+	REPLACE: "Uses newest download"
+} as const;
+
 /**
  * Extension name
  * TBD loading this from manifest?
@@ -25,13 +47,21 @@ export const BASE_SEARCH_URL = "https://f95zone.to/search/1/";
 export const EX_SEARCH_PARAMS = "c[title_only]=1&o=relevance";
 
 /**
+ * Search parameter that filters for game threads
+ */
+export const SEARCH_GAME_FILTER = 'c[child_nodes]=1&c[nodes][0]=2';
+
+/**
  * Finds splits for camel- and title-case strings.
  * https://stackoverflow.com/a/7594052/32075069
  */
-// export const UPPER_CASE_SPLIT_REGEX = /(?<!(^|[A-Z]))(?=[A-Z])|(?<!^)(?=[A-Z][a-z])/g;
-// export const UPPER_CASE_SPLIT_REGEX = /(?<!(^|[A-Z]))(?=[A-Z])|(?<!)(?=[A-Z][a-z])/gm;
 export const UPPER_CASE_SPLIT_REGEX =
 	/(?<!(^|[A-Z\.-_]))(?=[A-Z])|(?<!)(?=[A-Z][a-z])/;
+
+/**
+ * Matches snake-case segments. Works with hyphens as well.
+ */
+export const SNAKE_SEGMENT_REGEX = /(?<=.)[_-]+|[_-]+(?=.)/g;
 
 /**
  * Matches search results page.
@@ -91,7 +121,8 @@ export const SEARCH_TOKEN_BLACKLIST = new Set([
 /**
  * Regex for common delimiters of media downlaods
  */
-export const SEARCH_TOKEN_DELIMIT_REGEX = /[-_\[\]\(\)]/;
+// export const SEARCH_TOKEN_DELIMIT_REGEX = /[-_\[\]\(\)\/\\]/g;
+export const SEARCH_TOKEN_DELIMIT_REGEX = /[^a-zA-Z0-9 ]/g;
 
 /**
  * Matches version numbers including ones written as
@@ -100,16 +131,24 @@ export const SEARCH_TOKEN_DELIMIT_REGEX = /[-_\[\]\(\)]/;
  * Reference with great name:
  * https://ihateregex.io/expr/semver/
  */
-export const VERSION_NUMBER_REGEX =
-	/(v(e(r(s(i(o(n)?)?)?)?)?))?[^a-zA-Z]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?(\.\d*)?/i;
+export const VERSION_NUMBER_REGEX = 
+	/(v(e(r(s(i(o(n)?)?)?)?)?)?)?(?: |(?:(?<=.)[_-]+|[_-]+(?=.)))?(\d+)\.(\d+)(?:\.\d+\.\d+)?/gi;
 
 /**
  * Matches dates formatted year-month-day (dashes optional).
  * Most media downloads I've seen follow this format with their files for some reason.
  */
 export const YEAR_MONTH_DAY_REGEX =
-	/(?<=[^0-9])(\d{4})(?:[^0-9])?(\d{2})(?:[^0-9])?(\d{2})(?![0-9])/;
+	// /(?<=[^0-9])(\d{4})(?:[^0-9])?(\d{2})(?:[^0-9])?(\d{2})(?![0-9])/;
+	/(\d{4})\D*(\d{2}(?!\d))?\D*(\d{2}(?!\d))?/g;
 
+/**
+ * Matches date ranges which a lot of comics/stills 
+ * and animation collections use in their file names
+ */
+export const DATE_RANGE_REGEX =
+	new RegExp(`${YEAR_MONTH_DAY_REGEX.source}(?:${SNAKE_SEGMENT_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'gi');
+	
 /**
  * Matches copied folders based on how Windows formats their names
  */
@@ -123,7 +162,7 @@ export const NUMBER_NO_PRECEDING_REGEX = /(?<!.)\d+/;
 /**
  * Matches strings like XXX_Part-5, XXX pt.4, and XXX pt_123
  */
-export const PART_REGEX = /(?<=.*)(?:(?:part|pt(?:\.)?))(?:\D)?(\d+)/i;
+export const PART_REGEX = /(?<=.)(?:(?:part|pt(?:\.)?))(?:\D)?(\d+)/i;
 
 /**
  * Matches strings like XXX_vol-1, XXX_volume. 5, and XXX_volu.-123
@@ -133,8 +172,12 @@ export const VOLUME_REGEX =
 
 /**
  * Matches mediaId contained within a thread page's URL.
+ * FIXME? idky but for some reason the global tag really messes this up
+ * when scraping search results. It's fine without it since there should only be
+ * 1 match anyway but :/.
  */
-export const THREAD_LINK_MEDIA_ID_REGEX = /(?<=\.)\d+(?=\/?$)/;
+// export const THREAD_LINK_MEDIA_ID_REGEX = /(?<=\.)\d+(?=\/?$)/;  // OLD 
+export const THREAD_LINK_MEDIA_ID_REGEX = /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
 
 /**
  * Matches anything inside brackets (including brackets)
@@ -145,6 +188,42 @@ export const INSIDE_BRACKETS_REGEX = /\[([^\]]*)\]/;
  * Extracts Forum
  */
 export const FORUM_REGEX = /(?<=Forum:\s)[^0-9]+$/i;
+
+/**
+ * Matches valid executable file names
+ */
+export const EXE_FILENAME_REGEX = /.+\.exe$/gi;
+
+/**
+ * Matches DLSite codes which a lot of 
+ * games will include in their filenames.
+ * 
+ * It's just RJ{combination of numbers}
+ */
+export const DLSITE_CODE_REGEX = /RJ\d+/gi;
+
+export const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
+	/collection|m?tl|f95(?:zone|cracked)?|pc|patreon|steam(?:dlc)?|uncensored|dlc|cracked/gi,
+	/copy|win(?:dows)?|linux|win(?:\d{2})?|demo|final|public|release|update|build/gi,
+	/member(?:\D+)?version/gi,
+	new RegExp(`(?:not)?(?:${SNAKE_SEGMENT_REGEX.source})?complete`, 'gi'),
+	PART_REGEX,
+	VERSION_NUMBER_REGEX,
+	YEAR_MONTH_DAY_REGEX,
+	DATE_RANGE_REGEX,
+	VOLUME_REGEX
+]);
+
+
+// console.log('Concated suffix regex: ', Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source);
+
+export const DETAIL_SUFFIX_REGEX = new RegExp('(?<=.)' +
+	`(?:(?:${SNAKE_SEGMENT_REGEX.source})?` +
+	`(?:${Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source})` +
+	`(?:${SNAKE_SEGMENT_REGEX.source})?)+` +
+'$', 'gi');
+
+// console.log('Complete regex:', DETAIL_SUFFIX_REGEX.source);
 
 // export default {
 //     EXT_NAME,
