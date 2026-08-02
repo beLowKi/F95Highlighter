@@ -26,22 +26,26 @@ import {
  * TBD on if this should just re-init downloads if they're missing from storage
  * instead of every call to this func having to check if it returned null.
  */
-export async function getUserDownloads(): Promise<LocalStorage['downloads'] | null> {
+export async function getUserDownloads(): Promise<LocalStorage['downloads']> {
 	let storage: any;
 
 	// NOTE an Error is thrown when getting keys that don't exist
 	try {
 		storage = (await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS)).downloads;
+		
 	} catch (error) {
-		console.error(`Attempted to get user downloads before it was initialized`);
-		return null;
+		// console.error(`Attempted to get user downloads before it was initialized`);
+
+		// Re-initializing
+		await chrome.storage.local.set({[LOCAL_STORAGE_KEYS.DOWNLOADS]: {}});
+		
+		storage = {};
 	}
 	
 	// Validating
 	const { data: downloads, error, success } = LocalStorage.shape.downloads.safeParse(storage);
 	if ( !success ) {
-		console.error(`Broken download storage:\n${error.message}\n${JSON.stringify(storage, null, 2)}`);
-		return null;
+		throw new Error(`Broken download storage:\n${error.message}\n${JSON.stringify(storage, null, 2)}`);
 	}
 
 	return downloads;
@@ -185,7 +189,7 @@ export function prepSearchQuery(name: string): string {
 	// Common ways that file names split tokens
 	const delimitMatch = [
 		SEARCH_TOKEN_DELIMIT_REGEX,
-		UPPER_CASE_SPLIT_REGEX,
+		// UPPER_CASE_SPLIT_REGEX,
 	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
 
 	let cleaned = name.replaceAll(filterMatch, "");

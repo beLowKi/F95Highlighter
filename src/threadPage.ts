@@ -1,19 +1,9 @@
 import { MediaDownload, MediaType, type Media } from "types/data";
-import type { SaveDownloadPromptMessage, UpdateDownloadPromptMessage } from "types/message";
+import type { SaveDownloadMessage, UpdateDownloadMessage } from "types/message";
 import { THREAD_LINK_MEDIA_ID_REGEX } from "utils/const";
 import { getUserDownloads } from "utils/func";
 
-console.log("thread page content script loaded");
-
-/**
- * TODO
- *      1) Find download links
- *          a) This is only possible when logged in, so if they can't be found just exit
- *      2) Listen for these links being clicked
- *      3) When a download link is clicked:
- *              Popup asking if a download should be added for the Media off this page
- *              kinda like how LastPass with password forms
- */
+// console.log("thread page content script loaded");
 
 
 /**
@@ -104,7 +94,9 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     }
     
     // Sending 'update' message if existing download
-    // and 'addNew' message otherwise
+    // with certainty < 1.0; otherwise, 'addNew' message.
+    // The user confirming to update is assumed to mean
+    // that it's a correct match.
     const existingDownload = downloads[media.mediaId];
     const newDownload: MediaDownload = {
         name: media.title,
@@ -113,8 +105,8 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
         deleted: false
     };
 
-    if ( !!existingDownload ) {
-        const msg: UpdateDownloadPromptMessage = {
+    if ( !!existingDownload && existingDownload.certainty < 1.0 ) {
+        const msg: UpdateDownloadMessage = {
             action: 'update-download-prompt',
             payload: {
                 old: existingDownload,
@@ -123,18 +115,16 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
         }
 
         console.log('Existing download found; sending update prompt message');
-        const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
-        // TODO
+        await chrome.runtime.sendMessage(JSON.stringify(msg));
     
     } else {
-        const msg: SaveDownloadPromptMessage = {
+        const msg: SaveDownloadMessage = {
             action: 'save-download-prompt',
             payload: newDownload
         };
 
         console.log('No existing download found; sending save download prompt message');
-        const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
-        // TODO
+        await chrome.runtime.sendMessage(JSON.stringify(msg));
     }
 }
 

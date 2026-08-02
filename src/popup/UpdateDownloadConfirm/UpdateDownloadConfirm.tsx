@@ -11,19 +11,22 @@ export function UpdateDownloadConfirm(args: {
     return (
         <Modal show={args.show} onHide={args.onDismiss}>
             <Modal.Title>Update Download for {args.old.name}?</Modal.Title>
+            
             <Modal.Body>
                 {/* TODO compare old and new */}
             </Modal.Body>
+            
             <Modal.Footer>
                 <ButtonGroup>
-                    <Button type="submit" onSubmit={() => args.onSubmit(true)}>
+                    <Button type="submit" onClick={() => args.onSubmit(true)}>
                         Confirm
                     </Button>
-                    <Button type="reset" onSubmit={() => args.onSubmit(false)}>
+                    <Button type="reset" onClick={() => args.onSubmit(false)}>
                         Cancel
                     </Button>
                 </ButtonGroup>
             </Modal.Footer>
+
         </Modal>
     );
 }

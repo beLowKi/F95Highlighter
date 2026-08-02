@@ -81,15 +81,30 @@ export type GetUserLoggedInMessage = z.infer<typeof GetUserLoggedInMessage>;
 
 
 /**
- * Message sent to popup to ask user if they want to flag
- * the given Media as downloaded.
+ * Triggers a prompt asking the user if they want to save the
+ * given download. This happens after clicking a download link on a thread page.
+ * 
+ * Content scripts can't trigger popups directly, so this message actually goes to
+ * the service worker who then sends another message to the popup.
  */
-export const SaveDownloadPromptMessage = Message.safeExtend({
+export const SaveDownloadMessage = Message.safeExtend({
 	action:		z.literal('save-download-prompt'),
 	payload:	MediaDownload
 })
 
-export type SaveDownloadPromptMessage = z.infer<typeof SaveDownloadPromptMessage>;
+export type SaveDownloadMessage = z.infer<typeof SaveDownloadMessage>;
+
+
+/**
+ * 2nd part of the 'save download' prompt. 
+ * This one is sent from the service-worker to the popup.
+ */
+export const SaveDownloadPopupMessage = Message.safeExtend({
+	action:		z.literal('save-download-popup-prompt'),
+	payload:	SaveDownloadMessage.shape.payload
+})
+
+export type SaveDownloadPopupMessage = z.infer<typeof SaveDownloadPopupMessage>;
 
 
 /**
@@ -99,7 +114,7 @@ export type SaveDownloadPromptMessage = z.infer<typeof SaveDownloadPromptMessage
  * It updates the certainty to 100%--assuming the given thread page is the correct one
  * according to the user.
  */
-export const UpdateDownloadPromptMessage = Message.safeExtend({
+export const UpdateDownloadMessage = Message.safeExtend({
 	action:			z.literal('update-download-prompt'),
 	payload:		z.strictObject({
 		old:		MediaDownload,
@@ -107,4 +122,16 @@ export const UpdateDownloadPromptMessage = Message.safeExtend({
 	})
 });
 
-export type UpdateDownloadPromptMessage = z.infer<typeof UpdateDownloadPromptMessage>;
+export type UpdateDownloadMessage = z.infer<typeof UpdateDownloadMessage>;
+
+
+/**
+ * 2nd part of the 'update download' prompt. 
+ * This one is sent from the service-worker to the popup.
+ */
+export const UpdateDownloadPopupMessage = Message.safeExtend({
+	action:		z.literal('update-download-popup-prompt'),
+	payload:	UpdateDownloadMessage.shape.payload
+})
+
+export type UpdateDownloadPopupMessage = z.infer<typeof UpdateDownloadPopupMessage>;

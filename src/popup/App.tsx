@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { usePromiseModal } from "@prezly/react-promise-modal";
 
 import type { ConflictResolutionPolicy, MediaDownload } from "types/data";
-import { ClearKnownDownloadsMessage, GetConflictPolicyMessage, Message, SaveDownloadPromptMessage, ScrapeSearchResultsMessage, ShowImportResultsMessage, UpdateDownloadPromptMessage, type ImportDownloadsMessage } from "types/message";
+
+import { 
+    ClearKnownDownloadsMessage, GetConflictPolicyMessage, Message, 
+    SaveDownloadPopupMessage, ScrapeSearchResultsMessage, ShowImportResultsMessage, 
+    UpdateDownloadPopupMessage, type ImportDownloadsMessage 
+} from "types/message";
+
 import { LOCAL_STORAGE_KEYS, EXE_FILENAME_REGEX } from "utils/const";
 import { binSearch, scrapeSearchResults } from "utils/func";
 import ConflictResolutionDialogue from "./ConflictPolicyDialogue/ConflictPolicyDialogue";
@@ -37,8 +43,6 @@ const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
 
 
 export function App() {
-    const [importMode, setImportMode] = useState(ImportMode.FULL);
-    
     // Invokes modal that gets conflict policy
     const collectConflictPolicy = usePromiseModal<
         ConflictResolutionPolicy, 
@@ -170,15 +174,16 @@ export function App() {
                     break;
                 }
 
-                case SaveDownloadPromptMessage.shape.action.value: {
+                case SaveDownloadPopupMessage.shape.action.value: {
                     const { data: download, error, success } = 
-                        SaveDownloadPromptMessage.shape.payload.safeParse(payload);
+                        SaveDownloadPopupMessage.shape.payload.safeParse(payload);
                     
                     if (!success) {
                         console.error(`Popup received invalid new download:\n${error.message}`);
                         return false;
                     }
-                        
+                    
+                    console.log('Creating confirm new download dialogue');
                     let res = await confirmNewDownload.invoke({ download });
 
                     // A cancel also doesn't save the download
@@ -189,15 +194,16 @@ export function App() {
                     return true;
                 }
 
-                case UpdateDownloadPromptMessage.shape.action.value:
+                case UpdateDownloadPopupMessage.shape.action.value:
                     const { data: { old, new: newDownload } = {}, error, success } = 
-                        UpdateDownloadPromptMessage.shape.payload.safeParse(payload);
+                        UpdateDownloadPopupMessage.shape.payload.safeParse(payload);
                     
                     if (!success) {
                         console.error(`Popup received invalid update payload:\n${error.message}`);
                         return false;
                     }
-                        
+                    
+                    console.log('Creating update download dialogue');
                     let res = await confirmDownloadUpdate.invoke({ old: old!, new: newDownload! });
                     
                     // A cancel also doesn't save the download
@@ -243,7 +249,7 @@ export function App() {
             // TBD on if this is a good idea
             if ( item.kind === 'directory' || EXE_FILENAME_REGEX.test(item.name) ) {
                 // console.log('Adding ', item.name);
-                items.add(item.name);
+                items.add(item.name.replace(/\.exe/i, ''));
             }
         }
         
@@ -299,10 +305,15 @@ export function App() {
         // TODO handle response if there is one
     }
     
-    
-    return (<>
-        <div className="w-80 p-6">
-			<h1 className="text-2xl">F95 Highlighter</h1>
+
+    // Popup only contains a dialogue's modal if its active
+    const activeDialogue = [collectConflictPolicy, confirmNewDownload, confirmDownloadUpdate]
+        .filter(d => d.isDisplayed)
+        .at(0);
+
+    const content = ( !!activeDialogue )
+        ? activeDialogue.modal
+        : (<>
             <ButtonGroup>
                 <Button id="import-button" onClick={handleImportDownloads} type="submit">
                     Import Downloads
@@ -311,9 +322,15 @@ export function App() {
                     Delete Downloads
                 </Button>
             </ButtonGroup>
+        </>)
+    
+    return (<>
+        <div className="w-80 p-6">
+            <h1 className="text-2xl">F95 Highlighter</h1>
+            <div className="p-2">
+                { content }
+            </div>
 		</div>
-
-        {collectConflictPolicy.modal}
     </>);
 }
 

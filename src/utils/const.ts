@@ -202,21 +202,56 @@ export const EXE_FILENAME_REGEX = /.+\.exe$/gi;
  */
 export const DLSITE_CODE_REGEX = /RJ\d+/gi;
 
-export const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
+/**
+ * Contains month-name-matching regexes
+ */
+export const MONTH_REGEXES = {
+	JANUARY:  /\b(?:jan(?:uary)?)\b/gi,
+	FEBRUARY: /\b(?:feb(?:ruary)?)\b/gi,
+	MARCH:    /\b(?:mar(?:ch)?)\b/gi,
+	APRIL:    /\b(?:apr(?:il)?)\b/gi,
+	MAY:      /\bmay\b/gi,
+	JUNE:     /\b(?:jun(?:e)?)\b/gi,
+	JULY:     /\b(?:jul(?:y)?)\b/gi,
+	AUGUST:   /\b(?:aug(?:ust)?)\b/gi,
+	SEPTEMBE: /\b(?:sep(?:t(?:ember)?)?)\b/gi,
+	OCTOBER:  /\b(?:oct(?:ober)?)\b/gi,
+	NOVEMBER: /\b(?:nov(?:ember)?)\b/gi,
+	DECEMBER: /\b(?:dec(?:ember)?)\b/gi,
+} as const;
+
+/**
+ * Matches any month name
+ */
+export const MONTH_REGEX = Object.values(MONTH_REGEXES).reduce((p, c) => concatRegex(p, c));
+
+// Don't worry about this
+const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
 	/collection|m?tl|f95(?:zone|cracked)?|pc|patreon|steam(?:dlc)?|uncensored|dlc|cracked/gi,
 	/copy|win(?:dows)?|linux|win(?:\d{2})?|demo|final|public|release|update|build/gi,
-	/member(?:\D+)?version/gi,
+	/member(?:\D+)?version|animations?|assorted|compressed/gi,
+	new RegExp(`all(?:${SNAKE_SEGMENT_REGEX.source})?in(?:${SNAKE_SEGMENT_REGEX.source})?one`, 'gi'),
 	new RegExp(`(?:not)?(?:${SNAKE_SEGMENT_REGEX.source})?complete`, 'gi'),
 	PART_REGEX,
 	VERSION_NUMBER_REGEX,
 	YEAR_MONTH_DAY_REGEX,
+	MONTH_REGEX,
 	DATE_RANGE_REGEX,
+	/up(?:${SNAKE_SEGMENT_REGEX.source})?to/gi,
+	new RegExp(`until(?:${SNAKE_SEGMENT_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'gi'),
 	VOLUME_REGEX
 ]);
 
 
 // console.log('Concated suffix regex: ', Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source);
 
+/**
+ * Matches a detail suffix which many download files and thread titles use.
+ * It's essentially just checking if the tail-end of a string contains nothing
+ * but blacklisted terms.
+ * 
+ * Something like XX_Collection_up_to_Mar-2020.
+ */
 export const DETAIL_SUFFIX_REGEX = new RegExp('(?<=.)' +
 	`(?:(?:${SNAKE_SEGMENT_REGEX.source})?` +
 	`(?:${Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source})` +

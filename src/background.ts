@@ -1,3 +1,4 @@
+import pLimit from "p-limit";
 import {
 	ConflictResolutionPolicy,
 	LocalStorage,
@@ -9,6 +10,10 @@ import {
 } from "types/data";
 import { 
 	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, Message, 
+	SaveDownloadMessage, 
+	SaveDownloadPopupMessage, 
+	UpdateDownloadMessage, 
+	UpdateDownloadPopupMessage, 
 	type GetConflictPolicyMessage, type ScrapeSearchResultsMessage, type ShowImportResultsMessage 
 } from "types/message";
 
@@ -178,11 +183,9 @@ async function getMediaDownload(name: string): Promise<MediaDownload | null> {
  * @param items List of directory item names
  */
 async function importDownloads(items: string[]): Promise<void> {
-	// This can be null if downloads haven't been initialized yet
+	// NOTE this throws an Error if downloads store gets broken (fails LocalStorage model)
+	// for some reason, but this function should fail when that happens anyway
 	const downloads = await getUserDownloads();
-	if ( downloads === null ) {
-		throw new Error('Import failed due to uninitialized downloads');
-	}
 	
 	// console.log(`Downloads pre-import:\n${JSON.stringify(downloads, null, 2)}`);
 		
@@ -191,8 +194,14 @@ async function importDownloads(items: string[]): Promise<void> {
 	const conflicts: Record<number, MediaDownloadConflict> = {};
 	const failedItems = new Set<string>();
 	
+	// Limits number of concurrent promises so
+	// there aren't too many requests being sent to f95
+	// TODO make this a const somewhere
+	const limit = pLimit(8);
+	const queue = items.map((item) => limit(() => getMediaDownload(item)));
+	
 	try {
-		const foundDownloads = await Promise.all(items.map(getMediaDownload));
+		const foundDownloads = await Promise.all(queue);
 
 		for (const [index, download] of foundDownloads.entries()) {
 
@@ -399,6 +408,26 @@ async function importDownloads(items: string[]): Promise<void> {
 
 
 /**
+ * Saves a number of new downloads to storage.
+ */
+async function saveDownloads(newDownloads: LocalStorage['downloads']): Promise<void> {
+	const downloads = await getUserDownloads();
+	
+	for (const mediaId in newDownloads) {
+		delete downloads[mediaId];
+		downloads[mediaId] = newDownloads[mediaId]
+	}
+	
+	console.log(`New downloads: ${JSON.stringify(newDownloads, null, 2)}`);
+	console.log(`Updated downloads: ${JSON.stringify(downloads, null, 2)}`);
+
+	await chrome.storage.local.set({
+		[LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads,
+	});
+}
+
+
+/**
  * Clears known downloads
  */
 async function clearKnownDownloads(): Promise<void> {
@@ -423,6 +452,60 @@ async function clearKnownDownloads(): Promise<void> {
  */
 async function syncDownloads() {
 
+}
+
+
+/**
+ * Triggers a save-download prompt on the popup
+ */
+async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Promise<void> {
+	// Triggers popup prompt and waits for a response or cancellation
+	await chrome.action.openPopup();
+
+	const msg: SaveDownloadPopupMessage = {
+		action: 'save-download-popup-prompt',
+		payload: download,
+	}
+
+	const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
+	if ( !!res ) {
+		// TODO save the download
+		console.log(`Received truthy resopnse ${res}; saving download:\n${JSON.stringify(download)}`);
+		await saveDownloads({ [download.mediaId]: download });
+		
+	// DEBUG
+	} else {
+		console.log('New download canceled or user decided not to save');
+	}
+}
+
+
+/**
+ * Triggers an update-download prompt on the popup
+ */
+async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): Promise<void> {
+	// Triggers popup prompt and waits for a response or cancellation
+	await chrome.action.openPopup();
+
+	const msg: UpdateDownloadPopupMessage = {
+		action: 'update-download-popup-prompt',
+		payload,
+	}
+
+	const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
+	if ( !!res ) {
+		console.log(
+			`Received truthy resopnse ${res}; Updating download` +
+			`\nOld: ${JSON.stringify(payload.old)}` +
+			`\nNew: ${JSON.stringify(payload.new)}`
+		);
+
+		await saveDownloads({ [payload.new.mediaId]: payload.new });
+	
+	// DEBUG
+	} else {
+		console.log('Download update canceled or user decided not to save');
+	}
 }
 
 
@@ -530,7 +613,8 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 			}
 
 			break;
-
+		
+		// TMP Clearing downloads
 		case ClearKnownDownloadsMessage.shape.action.value:
 			try {
 				await clearKnownDownloads();
@@ -540,10 +624,54 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 			
 			break;
 		
-		default:
-			console.error(
-				"Missing or invalid action in message" +
-					` received by service-worker: ${JSON.stringify(message, null, 2)}`,
-			);
+		// Saving a new download from thread page
+		case SaveDownloadMessage.shape.action.value: {
+			const { data: download, error, success } = 
+				SaveDownloadMessage.shape.payload.safeParse(payload);
+			
+			if ( !success ) {
+				console.error(
+					'Background received save-download message ' +
+					`with invalid payload:\n ${error.message}`
+				);
+				return false;
+			}
+			
+			try {
+				await saveDownloadPrompt(download);
+
+			// Unexpected error counts as a cancel
+			} catch (error) {
+				console.error(`Unexpected error during save-download prompt: ${error}`);
+			}
+
+			break;
+		}
+
+		// Updating a download from thread page
+		case UpdateDownloadMessage.shape.action.value: {
+			const { data: update, error, success } = 
+				UpdateDownloadMessage.shape.payload.safeParse(payload);
+			
+			if ( !success ) {
+				console.error(
+					'Background received update-download message ' +
+					`with invalid payload:\n ${error.message}`
+				);
+				return false;
+			}
+			
+			try {
+				await updateDownloadPrompt(update);
+
+			// Unexpected error counts as a cancel
+			} catch (error) {
+				console.error(`Unexpected error during update-download prompt: ${error}`);
+			}
+			
+			break;
+		}
 	}
+
+	return false;
 });

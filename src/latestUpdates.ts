@@ -40,10 +40,8 @@ function updateTile(tile: HTMLDivElement, download?: MediaDownload) {
 /**
  * Updates the tiles of the itemWrapper.
  * This is called when media tiles are loaded
- * 
- * TODO find a way for this not to trigger 30+ times per page?
  */
-function updateTiles(itemWrapper: HTMLElement, downloads: LocalStorage['downloads']) {
+async function updateTiles( itemWrapper: HTMLElement, downloads: LocalStorage['downloads'] ) {
     // Every div in item wrapper represents a Media
     // and it should have an attribute called 'data-thread-id' which
     // contains the its Media's ID. It also has a single <a> tag child
@@ -95,12 +93,8 @@ async function main(): Promise<void> {
     }
     
     // Getting downloads
-    const downloads = await getUserDownloads();
-    if ( downloads === null ) {
-        console.error('Downloads not initialized');
-        return;
-    }
-    
+    let downloads = await getUserDownloads();
+
     // Tracks number of media tiles updated
     let numTilesUpdated = 0;
     
@@ -111,7 +105,7 @@ async function main(): Promise<void> {
                 return rej();
             }
             
-            const taskId = setTimeout(() => {
+            const taskId = setTimeout(async () => {
                 updateTiles(itemWrapper, downloads);
                 numTilesUpdated = itemWrapper.children.length;
                 res();
@@ -154,6 +148,16 @@ async function main(): Promise<void> {
             } catch (error) {
                 // console.error(`Error updating Media tiles: ${error}`);
             }
+        }
+    });
+    
+    // Updates downloads whenever storage 
+    // changes and triggers a tile update
+    chrome.storage.local.onChanged.addListener(async (changes) => {
+        const downloadsUpdated = ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes );
+        if ( downloadsUpdated ) {
+            downloads = await getUserDownloads();
+            queueUpdate(new AbortController().signal);
         }
     });
     

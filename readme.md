@@ -10,7 +10,26 @@ This might? be fixable by not searching by titles only, but it makes results les
 
 Could have dialogue to select which forum each import should be on, but that could get ugly with 100+ imports (like I would have).
 
+### Camel-Case inconsistency
+
+Currently, download files are tokenized, in part, by splitting camel-case tokens; i.e, aCamelCaseString -> a camel case string. However, not all files or thread titles with capital letters in the middle of a token are using camel case. For example, "ViciousFox Collection" has a download file named ViciousFox_Collection. While "viciousfox" works, searching for "vicious fox" won't because f95's search system is VERY strict.
+
+This leads to more failed imports because some's thread use camel-case always and others don't. A brute force solution would be checking both--potentially doubling the number of searches each import needs to do, not to mention when there are multiple camel case splits that the thread's title may or may not do as well.
+
 ## TODO
+
+### Loading/Progress
+
+
+
+### Train/Tune an AI to Match Download Files to Thread Titles
+
+It would probably be much more reliable to use an AI to match download files to threads, but it'd be more complicated to implement. This would involve either making an AI from scratch--and figuring out how the extension would communicate with it--or tuning an existing one which adds costs unless there's a free tunable AI service out there?
+
+### Testing
+
+- Figure out how to do automated tests for chrome extensions
+- Log failed search queries to a file with entries formattes as "{directory item name} -> {URL}"
 
 ### Deleted & Updated Downloads
 

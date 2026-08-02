@@ -13,14 +13,15 @@ export function NewDownloadConfirm(args: {
             
             <Modal.Footer>
                 <ButtonGroup>
-                    <Button type="submit" onSubmit={() => args.onSubmit(true)}>
+                    <Button type="submit" onClick={() => args.onSubmit(true)}>
                         Confirm
                     </Button>
-                    <Button type="reset" onSubmit={() => args.onSubmit(false)}>
+                    <Button type="reset" onClick={() => args.onSubmit(false)}>
                         Cancel
                     </Button>
                 </ButtonGroup>
             </Modal.Footer>
+
         </Modal>
     );
 }
