@@ -1,9 +1,8 @@
-import { Button, Row, Col } from "react-bootstrap";
+import { Button, OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ConflictResolutionPolicy } from "types/data";
 import { CONFLICT_POLICY_DESCRIPTIONS } from "utils/const";
 import { toTitle } from "utils/func";
 
-import styles from "./ConflictPolicyButton.module.css";
 
 export function ConflictPolicyButton(args: { 
     policy: string, 
@@ -14,18 +13,16 @@ export function ConflictPolicyButton(args: {
     const desc = CONFLICT_POLICY_DESCRIPTIONS[args.policy as ConflictResolutionPolicy];
     
     return (
-        <Button as='div' className={`${styles.main}`} onClick={args.onClick}>
-            <Row className="g-2 p-5">
-                {/* TODO image here */}
+        <OverlayTrigger 
+            placement="auto"
+            delay={{ show: 250, hide: 400 }}
+            overlay={<Tooltip id={`${title}-tooltip`}>{desc}</Tooltip>}>
 
-                <Col>
-                    <h2>{title}</h2>
-                </Col>
-                <Col>
-                    <p>{desc}</p>
-                </Col>
-            </Row>
-        </Button>
+            <Button className="w-100" onClick={args.onClick}>
+                {title}
+            </Button>
+            
+        </OverlayTrigger>
     );
 }
 

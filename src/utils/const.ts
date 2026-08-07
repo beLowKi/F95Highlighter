@@ -1,5 +1,18 @@
-import type { ConflictResolutionPolicy } from "types/data";
 import { concatRegex } from "./func";
+import type { ConflictResolutionPolicy, Settings } from "types/data";
+
+/**
+ * Default user settings set on initialization.
+ */
+export const DEFAULT_SETTINGS: Settings = {
+	searchSampleSize: 5,
+	highlights: {
+		uncertainColor:		'#FF0000',
+		lowCertaintyColor: 	'#FF7700',
+		midCertaintyColor: 	'#FFFF00',
+		highCertaintyColor:	'#00FF00'
+	}
+};
 
 /**
  * Keys used for local storage
@@ -19,6 +32,12 @@ export const CONFLICT_POLICY_DESCRIPTIONS: Record<ConflictResolutionPolicy, stri
 	KEEP_MOST_CERTAIN: "Uses the download that matched its f95 media with the highest confidence.",
 	REPLACE: "Uses newest download"
 } as const;
+
+/**
+ * Max number of concurrent Media 
+ * search queries when importing downloads 
+ */
+export const CONCURRENT_SEARCH_LIMIT = 8;
 
 /**
  * Extension name
@@ -132,7 +151,7 @@ export const SEARCH_TOKEN_DELIMIT_REGEX = /[^a-zA-Z0-9 ]/g;
  * https://ihateregex.io/expr/semver/
  */
 export const VERSION_NUMBER_REGEX = 
-	/(v(e(r(s(i(o(n)?)?)?)?)?)?)?(?: |(?:(?<=.)[_-]+|[_-]+(?=.)))?(\d+)\.(\d+)(?:\.\d+\.\d+)?/gi;
+	/(v(e(r(s(i(o(n)?)?)?)?)?)?)?(?: |(?:(?<=.)[_-]+|[_-]+(?=.)))?(\d+)\.(\d+)(?:\.\d+(?:\.\d+)?)?/gi;
 
 /**
  * Matches dates formatted year-month-day (dashes optional).
@@ -206,24 +225,35 @@ export const DLSITE_CODE_REGEX = /RJ\d+/gi;
  * Contains month-name-matching regexes
  */
 export const MONTH_REGEXES = {
-	JANUARY:  /\b(?:jan(?:uary)?)\b/gi,
-	FEBRUARY: /\b(?:feb(?:ruary)?)\b/gi,
-	MARCH:    /\b(?:mar(?:ch)?)\b/gi,
-	APRIL:    /\b(?:apr(?:il)?)\b/gi,
-	MAY:      /\bmay\b/gi,
-	JUNE:     /\b(?:jun(?:e)?)\b/gi,
-	JULY:     /\b(?:jul(?:y)?)\b/gi,
-	AUGUST:   /\b(?:aug(?:ust)?)\b/gi,
-	SEPTEMBE: /\b(?:sep(?:t(?:ember)?)?)\b/gi,
-	OCTOBER:  /\b(?:oct(?:ober)?)\b/gi,
-	NOVEMBER: /\b(?:nov(?:ember)?)\b/gi,
-	DECEMBER: /\b(?:dec(?:ember)?)\b/gi,
+	JANUARY:  /(?:jan(?:uary)?)/gi,
+	FEBRUARY: /(?:feb(?:ruary)?)/gi,
+	MARCH:    /(?:mar(?:ch)?)/gi,
+	APRIL:    /(?:apr(?:il)?)/gi,
+	MAY:      /may/gi,
+	JUNE:     /(?:jun(?:e)?)/gi,
+	JULY:     /(?:jul(?:y)?)/gi,
+	AUGUST:   /(?:aug(?:ust)?)/gi,
+	SEPTEMBE: /(?:sep(?:t(?:ember)?)?)/gi,
+	OCTOBER:  /(?:oct(?:ober)?)/gi,
+	NOVEMBER: /(?:nov(?:ember)?)/gi,
+	DECEMBER: /(?:dec(?:ember)?)/gi,
 } as const;
 
 /**
  * Matches any month name
  */
 export const MONTH_REGEX = Object.values(MONTH_REGEXES).reduce((p, c) => concatRegex(p, c));
+
+/**
+ * Matches hex color strings like #00ff00
+ * Adding [0-9a-f]{3} supports 3-number
+ */
+export const HEX_COLOR_REGEX = /(?<!.)#(?:[0-9a-f]{6})(?!.)/i;
+
+/**
+ * Matches rgb strings like rgb(255, 12, 123)
+ */
+export const RGB_REGEX = /(?<!.)rgb\(([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?[0-2]?(?:[0-4]?[0-9]|5[0-5])\)(?!.)/i;
 
 // Don't worry about this
 const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
@@ -259,10 +289,3 @@ export const DETAIL_SUFFIX_REGEX = new RegExp('(?<=.)' +
 '$', 'gi');
 
 // console.log('Complete regex:', DETAIL_SUFFIX_REGEX.source);
-
-// export default {
-//     EXT_NAME,
-//     BASE_SEARCH_URL, EX_SEARCH_PARAMS,
-//     SEARCH_TOKEN_BLACKLIST, SEARCH_TOKEN_DELIMIT_REGEX,
-//     VERSION_NUMBER_REGEX, YEAR_MONTH_DAY_REGEX,
-// };

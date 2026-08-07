@@ -1,3 +1,4 @@
+import { HEX_COLOR_REGEX, RGB_REGEX } from "utils/const";
 import z from "zod";
 
 
@@ -92,7 +93,22 @@ export type ImportResults = z.infer<typeof ImportResults>;
 /**
  * User settings
  */
-export const Settings = z.strictObject({});
+export const Settings = z.strictObject({
+	searchSampleSize:		z.number(),
+	highlights:				z.strictObject({
+		uncertainColor:			z.string(),
+		highCertaintyColor: 	z.string(),
+		midCertaintyColor: 		z.string(),
+		lowCertaintyColor: 		z.string(),
+	})
+})
+	// Forces every color string to be hex string
+	// rgb(X, X, X) isn't allowed because react-bootstrap
+	// color pickers require hex strings for their 'value' 
+	.refine((value) => {
+		const colors = Object.values(value.highlights);
+		return colors.every((c) => HEX_COLOR_REGEX.test(c));
+	}, { message: 'Highlights must be valid RGB strings' });
 
 export type Settings = z.infer<typeof Settings>;
 

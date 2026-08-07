@@ -1,4 +1,4 @@
-import { ButtonGroup, Modal } from "react-bootstrap";
+import { ButtonGroup, Col, Modal, Row } from "react-bootstrap";
 import { ConflictResolutionPolicy } from "types/data";
 import ConflictPolicyButton from "../ConflictPolicyButton/ConflictPolicyButton";
 import type { GetConflictPolicyMessage } from "types/message";
@@ -20,7 +20,7 @@ export function ConflictResolutionDialogue(args: {
         ? Object.keys(args.conflicts).length
         : undefined;
     
-    console.log('Creating policy buttons');
+    // console.log('Creating policy buttons');
     const policyButtons = Object.keys(ConflictResolutionPolicy.enum).map(policy => (
         <ConflictPolicyButton 
             key={policy}
@@ -29,27 +29,37 @@ export function ConflictResolutionDialogue(args: {
         />
     ));
 
-    console.log('Creating modal');    
+    // console.log('Creating modal');    
     return(
-        <Modal show={args.show} onHide={args.onDismiss} className={styles.main}>
+        <Modal 
+            show={args.show} 
+            onHide={args.onDismiss}
+            size="sm"
+            centered>
+            
             <Modal.Header closeButton>
-                <Modal.Title>Replace or Skip Downloads</Modal.Title>
-                
-                <Modal.Body>
-                    <div>
+                <Modal.Title className="text-2xl text-center">Replace or Skip Downloads</Modal.Title>
+            </Modal.Header>
+            
+            <Modal.Body className="p-6">
+                <Col>
+                    <Row>
                         {!!numConflicts
                             ? <p>Detected {numConflicts} duplicate download(s)</p>
                             : <p>Detected duplicate download(s)</p>
                         }
-                    </div>
-                    
-                    {/* Policy buttons */}
-                    <ButtonGroup vertical className={styles.policyButtonGroup}>
-                        {policyButtons}
-                    </ButtonGroup>
-                </Modal.Body>
+                        {/* TBD expandable list of duplicates? */}
+                    </Row>
 
-            </Modal.Header>
+                    <Row>
+                        {/* Policy buttons */}
+                        <ButtonGroup className='p-2'>
+                            {policyButtons}
+                        </ButtonGroup>
+                    </Row>
+                </Col>
+            </Modal.Body>
+
         </Modal>
     );
 };

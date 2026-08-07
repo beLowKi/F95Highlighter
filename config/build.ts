@@ -31,8 +31,8 @@ await Bun.build({
   entrypoints: resolveEntryPoints([
     ...scripts,
     service_worker,
-    "options/index.tsx",
     "popup/index.tsx",
+    "thread-popup/index.tsx",
   ]),
   outdir,
 });
@@ -55,6 +55,7 @@ for await (const filename of glob.scan(publicFolder)) {
 
     // rename files to index.html since it's being copied into a folder that share its original name
     await $`cp ${file.name} ${outdir}/${fileFolder}/index.html`;
+
     // copy the css file into the folder
     await $`bun run css -- ${mainCssFile.name} -o ${outdir}/${fileFolder}/main.css`.quiet();
   } else {

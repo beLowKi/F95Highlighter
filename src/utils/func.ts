@@ -1,10 +1,12 @@
-import { LocalStorage, MediaType, type SearchResult } from "types/data.ts";
-import type { GetUserLoggedInMessage } from "types/message";
+import { LocalStorage, MediaType, Settings, type SearchResult } from "types/data.ts";
+import type { UserNotLoggedInMessage } from "types/message";
 
 import {
+	DEFAULT_SETTINGS,
 	DETAIL_SUFFIX_REGEX,
 	DLSITE_CODE_REGEX,
 	FORUM_REGEX,
+	HEX_COLOR_REGEX,
 	INSIDE_BRACKETS_REGEX,
 	LOCAL_STORAGE_KEYS,
 	NUMBER_NO_PRECEDING_REGEX,
@@ -18,6 +20,15 @@ import {
 	VOLUME_REGEX,
 	YEAR_MONTH_DAY_REGEX,
 } from "utils/const";
+
+
+/**
+ * Returns whether the popup is currently active
+ */
+export function isPopupActive(): boolean {
+	const views = chrome.extension.getViews({ type: 'popup' });
+	return views.length > 0;
+}
 
 
 /**
@@ -49,6 +60,36 @@ export async function getUserDownloads(): Promise<LocalStorage['downloads']> {
 	}
 
 	return downloads;
+}
+
+
+/**
+ * Returns user settings.
+ */
+export async function getUserSettings(): Promise<Settings> {
+	let storage: any;
+
+	// This looks weird because chrome.storage gets return the full
+	// { [key]: value } object instead of just the value the key points to,
+	// so you have to access the key twice.
+	try {
+		storage = (await chrome.storage.local.get(LOCAL_STORAGE_KEYS.SETTINGS))[LOCAL_STORAGE_KEYS.SETTINGS];
+
+	} catch (error) {
+		await chrome.storage.local.set({
+			[LOCAL_STORAGE_KEYS.SETTINGS]: DEFAULT_SETTINGS
+		});
+
+		storage = DEFAULT_SETTINGS;
+	}
+
+	// Validating against model
+	const { data: settings, error, success } = Settings.safeParse(storage);
+	if ( !success ) {
+		throw new Error(`Error: settings in broken state:\n${error.message}`);
+	}
+
+	return settings;
 }
 
 
@@ -164,7 +205,17 @@ export async function userLoggedIn(): Promise<boolean> {
  * Prompts user to login to F95.
  */
 export async function promptLogin(): Promise<boolean> {
-	throw new Error("Not implemented");
+	// Opens popup if it isn't already active
+	if (!isPopupActive()) {
+		await chrome.action.openPopup();
+	}
+	
+	// Messages popup to tell user they aren't logged in when they need to be.
+	// The response should be a boolean for 'userLoggedIn'
+	const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
+	const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
+	
+	return !!userLoggedIn;
 }
 
 
@@ -189,7 +240,7 @@ export function prepSearchQuery(name: string): string {
 	// Common ways that file names split tokens
 	const delimitMatch = [
 		SEARCH_TOKEN_DELIMIT_REGEX,
-		// UPPER_CASE_SPLIT_REGEX,
+		UPPER_CASE_SPLIT_REGEX,
 	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
 
 	let cleaned = name.replaceAll(filterMatch, "");
@@ -694,4 +745,23 @@ export function binSearch<T>(
 	}
 
 	return undefined;
+}
+
+
+/**
+ * Expands a 3-number hex into 6 letter format.
+ * Throws an Error if input isn't a valid hex string.
+ */
+export function expandRGBHex(hex: string): string {
+	if ( !HEX_COLOR_REGEX.test(hex) ) {
+		throw new Error(`Invalid RGB hex: ${hex}`);
+	}
+
+	let cleanHex = hex.replace('#', '');
+	
+	if (cleanHex.length === 3) {
+		cleanHex = cleanHex.replace(/./g, char => char + char);
+	}
+	
+	return `#${cleanHex}`;
 }

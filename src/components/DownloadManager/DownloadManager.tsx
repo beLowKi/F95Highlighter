@@ -1,39 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePromiseModal } from "@prezly/react-promise-modal";
 
-import type { ConflictResolutionPolicy, MediaDownload } from "types/data";
+import type { ConflictResolutionPolicy } from "types/data";
 
 import { 
     ClearKnownDownloadsMessage, GetConflictPolicyMessage, Message, 
-    SaveDownloadPopupMessage, ScrapeSearchResultsMessage, ShowImportResultsMessage, 
-    UpdateDownloadPopupMessage, type ImportDownloadsMessage 
+    ScrapeSearchResultsMessage, ShowImportResultsMessage, 
+    type ImportDownloadsMessage 
 } from "types/message";
 
-import { LOCAL_STORAGE_KEYS, EXE_FILENAME_REGEX } from "utils/const";
-import { binSearch, scrapeSearchResults } from "utils/func";
-import ConflictResolutionDialogue from "./ConflictPolicyDialogue/ConflictPolicyDialogue";
-import { Button, ButtonGroup, Modal } from "react-bootstrap";
-import { NewDownloadConfirm } from "./NewDownloadConfirm/NewDownloadConfirm";
-import { UpdateDownloadConfirm } from "./UpdateDownloadConfirm/UpdateDownloadConfirm";
+import { EXE_FILENAME_REGEX } from "utils/const";
+import { scrapeSearchResults } from "utils/func";
+import ConflictResolutionDialogue from "../ConflictPolicyDialogue/ConflictPolicyDialogue";
+import { Button, ButtonGroup, Spinner } from "react-bootstrap";
 
-
-/**
- * Different modes when importing downloads
- */
-enum ImportMode {
-    /**
-     * Includes all items found in the selected directory 
-     */
-    FULL,
-
-    /**
-     * Filters out known downloads
-     * 
-     * **NOTE** a download is only considered known
-     * if it's name is an exact match
-     */
-    NEW_ONLY
-};
 
 // Directory picker options
 const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
@@ -42,7 +22,18 @@ const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
 } as const;
 
 
-export function App() {
+/**
+ * TODO
+ * 
+ *  1) Show import results in temp popup
+ *      a) Num scanned, failed items, etc.
+ *      b) Collapsable button revealing scrollable list of which items failed
+ *      (and what search query was used for them?)
+ */
+export function DownloadManager(args: {
+    isBusy:             boolean,
+    setIsBusy:          (x: boolean) => void,
+}) {
     // Invokes modal that gets conflict policy
     const collectConflictPolicy = usePromiseModal<
         ConflictResolutionPolicy, 
@@ -56,28 +47,28 @@ export function App() {
         />
     ));
 
-    // Invokes modal that gets confirmation on saving a new download
-    const confirmNewDownload = usePromiseModal<boolean, { download: MediaDownload }>(
-        ({ show, onSubmit, onDismiss, download }) => (
-            <NewDownloadConfirm 
-                show={show}
-                onDismiss={onDismiss}
-                onSubmit={onSubmit}
-                download={download}
-            />
-    ));
+    // // Invokes modal that gets confirmation on saving a new download
+    // const confirmNewDownload = usePromiseModal<boolean, { download: MediaDownload }>(
+    //     ({ show, onSubmit, onDismiss, download }) => (
+    //         <NewDownloadConfirm 
+    //             show={show}
+    //             onDismiss={onDismiss}
+    //             onSubmit={onSubmit}
+    //             download={download}
+    //         />
+    // ));
     
-    // Invokes modal that gets confirmation on updating a download
-    const confirmDownloadUpdate = usePromiseModal<boolean, { old: MediaDownload, new: MediaDownload }>(
-        ({ show, onSubmit, onDismiss, old, new: newDownload }) => (
-            <UpdateDownloadConfirm 
-                show={show}
-                onDismiss={onDismiss}
-                onSubmit={onSubmit}
-                old={old} 
-                new={newDownload}                
-            />
-    ));
+    // // Invokes modal that gets confirmation on updating a download
+    // const confirmDownloadUpdate = usePromiseModal<boolean, { old: MediaDownload, new: MediaDownload }>(
+    //     ({ show, onSubmit, onDismiss, old, new: newDownload }) => (
+    //         <UpdateDownloadConfirm 
+    //             show={show}
+    //             onDismiss={onDismiss}
+    //             onSubmit={onSubmit}
+    //             old={old} 
+    //             new={newDownload}                
+    //         />
+    // ));
     
 
     /**
@@ -90,7 +81,7 @@ export function App() {
             sendResponse: (response?: any) => void
         ) => {
             
-            console.log('Received message in popup');
+            // console.log('Received message in DownloadManager');
             
             // Parsing message
             const { 
@@ -173,45 +164,6 @@ export function App() {
                     console.log(`Import results:\n${JSON.stringify(results, null, 2)}`);
                     break;
                 }
-
-                case SaveDownloadPopupMessage.shape.action.value: {
-                    const { data: download, error, success } = 
-                        SaveDownloadPopupMessage.shape.payload.safeParse(payload);
-                    
-                    if (!success) {
-                        console.error(`Popup received invalid new download:\n${error.message}`);
-                        return false;
-                    }
-                    
-                    console.log('Creating confirm new download dialogue');
-                    let res = await confirmNewDownload.invoke({ download });
-
-                    // A cancel also doesn't save the download
-                    if ( res === undefined ) res = false;
-
-                    sendResponse(res);
-                    
-                    return true;
-                }
-
-                case UpdateDownloadPopupMessage.shape.action.value:
-                    const { data: { old, new: newDownload } = {}, error, success } = 
-                        UpdateDownloadPopupMessage.shape.payload.safeParse(payload);
-                    
-                    if (!success) {
-                        console.error(`Popup received invalid update payload:\n${error.message}`);
-                        return false;
-                    }
-                    
-                    console.log('Creating update download dialogue');
-                    let res = await confirmDownloadUpdate.invoke({ old: old!, new: newDownload! });
-                    
-                    // A cancel also doesn't save the download
-                    if ( res === undefined ) res = false;
-
-                    sendResponse(res);
-                    
-                    return true;
             }
         };
         
@@ -224,11 +176,13 @@ export function App() {
         }
     }, []);
     
-    
+
     /**
      * Begins download import
      */
     async function handleImportDownloads(): Promise<void> {
+        args.setIsBusy(true);
+        
         let directory: FileSystemDirectoryHandle;
         
         try {
@@ -236,6 +190,7 @@ export function App() {
 
         } catch (error) {
             console.error(`Unexpected Error: ${error}`);
+            args.setIsBusy(false);
             return;
         }
         
@@ -281,21 +236,25 @@ export function App() {
             payload: Array.from(items),
         };
 
-        chrome.runtime.sendMessage(JSON.stringify(message));
+        await chrome.runtime.sendMessage(JSON.stringify(message));
+        
+        args.setIsBusy(false);
     }
 
     /**
      * TODO tells background to sync downloads
      * based on selected directory.
      */
-    async function handleSyncDownloads(): Promise<void> {
+    // async function handleSyncDownloads(): Promise<void> {
 
-    }
+    // }
     
     /**
      * TMP tells background to clear downloads
      */
     async function handleDeleteDownloads(): Promise<void> {
+        args.setIsBusy(true);
+        
         const message: ClearKnownDownloadsMessage = {
             action: 'clear-known-downloads',
             payload: null
@@ -303,18 +262,24 @@ export function App() {
         
         const res = await chrome.runtime.sendMessage(JSON.stringify(message));
         // TODO handle response if there is one
+
+        args.setIsBusy(false);
     }
     
 
     // Popup only contains a dialogue's modal if its active
-    const activeDialogue = [collectConflictPolicy, confirmNewDownload, confirmDownloadUpdate]
+    const activeDialogue = [collectConflictPolicy]
         .filter(d => d.isDisplayed)
         .at(0);
 
-    const content = ( !!activeDialogue )
-        ? activeDialogue.modal
-        : (<>
-            <ButtonGroup>
+    let content: JSX.Element;
+        
+    if ( args.isBusy ) {
+        content = <Spinner animation="border" variant="primary"/>;
+        
+    } else {
+        content = (<>
+            <ButtonGroup size="sm">
                 <Button id="import-button" onClick={handleImportDownloads} type="submit">
                     Import Downloads
                 </Button>
@@ -322,17 +287,20 @@ export function App() {
                     Delete Downloads
                 </Button>
             </ButtonGroup>
-        </>)
+        </>);
+    }
     
-    return (<>
-        <div className="w-80 p-6">
-            <h1 className="text-2xl">F95 Highlighter</h1>
-            <div className="p-2">
-                { content }
-            </div>
-		</div>
-    </>);
+    return (
+        <div 
+            className='d-flex align-items-center justify-content-center'
+            style={{ height: ( !!activeDialogue ) ? '350px' : '100px' }}>
+
+            <div>{content}</div>
+            
+            {activeDialogue?.modal}
+        </div>
+    );
 }
 
 
-export default App;
+export default DownloadManager;

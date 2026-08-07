@@ -1,8 +1,16 @@
-import { LocalStorage, MediaDownload } from "types/data";
+import { LocalStorage, MediaDownload, Settings } from "types/data";
 import { LOCAL_STORAGE_KEYS } from "utils/const";
-import { getUserDownloads } from "utils/func";
+import { getUserDownloads, getUserSettings } from "utils/func";
 
-console.log("latest updates content script loaded");
+// console.log("latest updates content script loaded");
+
+// Stores the colors used to show different certainties
+let highlights: Settings['highlights'] = {
+    uncertainColor:     '',
+    lowCertaintyColor:  '',
+    midCertaintyColor:  '',
+    highCertaintyColor: ''    
+};
 
 
 /**
@@ -20,19 +28,19 @@ function updateTile(tile: HTMLDivElement, download?: MediaDownload) {
     console.log(`Updating tile for ${titleEl?.textContent}`);
     
     // TODO make this customizable
-    tile.style.padding = '3px';
+    tile.style.padding = '4px';
     
     if ( download.certainty >= 0.8 ) {
-        tile.style.backgroundColor = "#0F0";
+        tile.style.backgroundColor = highlights.highCertaintyColor;
         
     } else if ( download.certainty >= 0.65 ) {
-        tile.style.backgroundColor = '#FF0';
+        tile.style.backgroundColor = highlights.midCertaintyColor;
 
     } else if ( download.certainty > 0.5 ) {
-        tile.style.backgroundColor = 'rgb(255, 90, 0)';
+        tile.style.backgroundColor = highlights.lowCertaintyColor;
 
     } else {
-        tile.style.backgroundColor = '#F00';
+        tile.style.backgroundColor = highlights.uncertainColor;
     }
 }
 
@@ -48,7 +56,7 @@ async function updateTiles( itemWrapper: HTMLElement, downloads: LocalStorage['d
     // which has a thread page link containing the same ID.
     // const mediaTiles = itemWrapper.getElementsByTagName('div');
     const mediaTiles = [...itemWrapper.children] as HTMLDivElement[];
-    console.log(`Found ${mediaTiles.length} media tiles`);
+    // console.log(`Found ${mediaTiles.length} media tiles`);
     
     let i = 0;
 
@@ -57,7 +65,7 @@ async function updateTiles( itemWrapper: HTMLElement, downloads: LocalStorage['d
         
         const idAttr = tile.getAttribute('data-thread-id');
         if ( idAttr === null ) {
-            console.log(`Failed to find idAttr of tile #${i + 1}`)
+            // console.log(`Failed to find idAttr of tile #${i + 1}`)
             continue;
         }
         
@@ -92,8 +100,14 @@ async function main(): Promise<void> {
         return;
     }
     
-    // Getting downloads
-    let downloads = await getUserDownloads();
+    // Initial load of downloads and settings
+    // let downloads = await getUserDownloads();
+
+    let downloads: LocalStorage['downloads'];
+    getUserDownloads().then(res => downloads = res);
+    getUserSettings().then(res => highlights = res.highlights);
+    
+    // highlights = ( await getUserSettings() ).highlights;
 
     // Tracks number of media tiles updated
     let numTilesUpdated = 0;
@@ -151,12 +165,21 @@ async function main(): Promise<void> {
         }
     });
     
-    // Updates downloads whenever storage 
+    // Updates downloads and highlight colors whenever storage 
     // changes and triggers a tile update
     chrome.storage.local.onChanged.addListener(async (changes) => {
-        const downloadsUpdated = ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes );
-        if ( downloadsUpdated ) {
-            downloads = await getUserDownloads();
+        // Downloads were changed
+        if ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
+            downloads = changes[LOCAL_STORAGE_KEYS.DOWNLOADS].newValue;
+            queueUpdate(new AbortController().signal);
+        }
+        
+        // Highlight settings were changed
+        if ( 
+            LOCAL_STORAGE_KEYS.SETTINGS in changes && 
+            'highlights' in changes[LOCAL_STORAGE_KEYS.SETTINGS].newValue
+        ) {
+            highlights = changes[LOCAL_STORAGE_KEYS.SETTINGS].newValue.highlights;
             queueUpdate(new AbortController().signal);
         }
     });

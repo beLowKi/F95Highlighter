@@ -6,7 +6,7 @@ import {
 	MediaDownload,
 	type MediaDownloadConflict,
 	SearchResult,
-	type Settings,
+	Settings,
 } from "types/data";
 import { 
 	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, Message, 
@@ -14,11 +14,14 @@ import {
 	SaveDownloadPopupMessage, 
 	UpdateDownloadMessage, 
 	UpdateDownloadPopupMessage, 
+	UserNotLoggedInMessage, 
 	type GetConflictPolicyMessage, type ScrapeSearchResultsMessage, type ShowImportResultsMessage 
 } from "types/message";
 
 import {
 	BASE_SEARCH_URL,
+	CONCURRENT_SEARCH_LIMIT,
+	DEFAULT_SETTINGS,
 	EX_SEARCH_PARAMS,
 	LOCAL_STORAGE_KEYS,
 	SEARCH_TOKEN_DELIMIT_REGEX,
@@ -33,7 +36,11 @@ import {
 	keywordScore,
 	userLoggedIn,
 	getUserDownloads,
+	getUserSettings,
+	isPopupActive,
 } from "utils/func";
+
+import fs from 'node:fs';
 
 
 /**
@@ -47,8 +54,20 @@ async function searchMediaName(
 	if (!(await userLoggedIn())) {
 		const success = await promptLogin();
 		if (!success) {
-			// TODO show this via popup or toast
-			console.error("Failed to login to f95zone");
+			console.error("Failed to login to f95zone; triggering popup");
+
+			// Opens popup if it isn't already active
+			if (!isPopupActive()) {
+				await chrome.action.openPopup();
+			}
+			
+			// Messages popup to tell user they aren't logged in when they need to be.
+			// The response should be a boolean for 'userLoggedIn'
+			const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
+			const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
+			if ( !!!userLoggedIn ) {
+				return null;
+			}
 		}
 	}
 
@@ -95,7 +114,7 @@ async function searchMediaName(
 		`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
 	);
 
-	const sampleSize = 5; // TODO get from settings
+	const sampleSize = ( await getUserSettings() ).searchSampleSize;
 	const sample = searchResults.slice(0, sampleSize);
 
 	// Finding the search result whose title
@@ -183,6 +202,12 @@ async function getMediaDownload(name: string): Promise<MediaDownload | null> {
  * @param items List of directory item names
  */
 async function importDownloads(items: string[]): Promise<void> {
+	// Prompting login if needed so that the search feature is available.
+	// Failing both, the import is cancelled.
+	if ( !((await userLoggedIn()) || (await promptLogin())) ) {
+
+	}
+	
 	// NOTE this throws an Error if downloads store gets broken (fails LocalStorage model)
 	// for some reason, but this function should fail when that happens anyway
 	const downloads = await getUserDownloads();
@@ -196,8 +221,7 @@ async function importDownloads(items: string[]): Promise<void> {
 	
 	// Limits number of concurrent promises so
 	// there aren't too many requests being sent to f95
-	// TODO make this a const somewhere
-	const limit = pLimit(8);
+	const limit = pLimit(CONCURRENT_SEARCH_LIMIT);
 	const queue = items.map((item) => limit(() => getMediaDownload(item)));
 	
 	try {
@@ -239,8 +263,7 @@ async function importDownloads(items: string[]): Promise<void> {
 		return;
 	}
 
-	// TODO check settings for 'default-conflict-resolution-policy'
-	// and have that be the init value instead
+	// How duplicate downloads are handled
 	let conflictPolicy: ConflictResolutionPolicy = 'KEEP_MOST_CERTAIN';
 	
 	// Triggers popup prompt asking user how to handle duplicates
@@ -418,8 +441,8 @@ async function saveDownloads(newDownloads: LocalStorage['downloads']): Promise<v
 		downloads[mediaId] = newDownloads[mediaId]
 	}
 	
-	console.log(`New downloads: ${JSON.stringify(newDownloads, null, 2)}`);
-	console.log(`Updated downloads: ${JSON.stringify(downloads, null, 2)}`);
+	// console.log(`New downloads: ${JSON.stringify(newDownloads, null, 2)}`);
+	// console.log(`Updated downloads: ${JSON.stringify(downloads, null, 2)}`);
 
 	await chrome.storage.local.set({
 		[LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads,
@@ -459,6 +482,11 @@ async function syncDownloads() {
  * Triggers a save-download prompt on the popup
  */
 async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Promise<void> {
+	console.log('Opening prompt ');
+	
+	// Sets a new popup that handles thread stuff
+	await chrome.action.setPopup({ popup: 'thread-popup/index.html' });
+
 	// Triggers popup prompt and waits for a response or cancellation
 	await chrome.action.openPopup();
 
@@ -467,16 +495,23 @@ async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Pro
 		payload: download,
 	}
 
-	const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
-	if ( !!res ) {
-		// TODO save the download
-		console.log(`Received truthy resopnse ${res}; saving download:\n${JSON.stringify(download)}`);
-		await saveDownloads({ [download.mediaId]: download });
-		
-	// DEBUG
-	} else {
-		console.log('New download canceled or user decided not to save');
+	try {
+		const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
+		if ( !!res ) {
+			console.log(`Received truthy response ${res}; saving download:\n${JSON.stringify(download)}`);
+			await saveDownloads({ [download.mediaId]: download });
+			
+		// DEBUG
+		} else {
+			console.log('New download canceled or user decided not to save');
+		}
+
+	} catch (error) {
+		console.error(`Error saving download: ${error}`);
 	}
+
+	// Reseting popup
+	await chrome.action.setPopup({ popup: 'popup/index.html' });
 }
 
 
@@ -484,6 +519,10 @@ async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Pro
  * Triggers an update-download prompt on the popup
  */
 async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): Promise<void> {
+	
+	// Sets a new popup that handles thread stuff
+	await chrome.action.setPopup({ popup: 'thread-popup/index.html' });
+
 	// Triggers popup prompt and waits for a response or cancellation
 	await chrome.action.openPopup();
 
@@ -492,20 +531,28 @@ async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): 
 		payload,
 	}
 
-	const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
-	if ( !!res ) {
-		console.log(
-			`Received truthy resopnse ${res}; Updating download` +
-			`\nOld: ${JSON.stringify(payload.old)}` +
-			`\nNew: ${JSON.stringify(payload.new)}`
-		);
-
-		await saveDownloads({ [payload.new.mediaId]: payload.new });
+	try {
+		const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
+		if ( !!res ) {
+			console.log(
+				`Received truthy resopnse ${res}; Updating download` +
+				`\nOld: ${JSON.stringify(payload.old)}` +
+				`\nNew: ${JSON.stringify(payload.new)}`
+			);
 	
-	// DEBUG
-	} else {
-		console.log('Download update canceled or user decided not to save');
+			await saveDownloads({ [payload.new.mediaId]: payload.new });
+		
+		// DEBUG
+		} else {
+			console.log('Download update canceled or user decided not to save');
+		}
+
+	} catch (error) {
+		console.error(`Error during update download prompt: ${error}`);
 	}
+
+	// Resetting popup
+	await chrome.action.setPopup({ popup: 'popup/index.html' });
 }
 
 
@@ -542,34 +589,36 @@ async function getSettings(): Promise<Settings> {
  * Triggers when extension is first installed or updated
  */
 chrome.runtime.onInstalled.addListener(async (details) => {
-	// uncomment if you want options.html to be opened after extension is installed
-	// if ( details.reason === chrome.runtime.OnInstalledReason.INSTALL ) {
-	//   chrome.tabs.create({
-	//     url: 'options.html',
-	//   });
-	// }
-
 	// TMP
 	// await chrome.storage.local.clear();
 	
 	// Initializing storage
 	// 'get' promises reject when that key doesn't exist
-	for (const key of Object.values(LOCAL_STORAGE_KEYS)) {
-		try {
-			const value = await chrome.storage.local.get(key);
-			if ( typeof value[key] === 'undefined' ) {
-				await chrome.storage.local.set({[key]: {}});
-			} else {
-				// console.log(`Pre-initialized ${key} found:\n${JSON.stringify(value, null, 2)}`);
-			}
-		} catch (error) {
-			console.error(`Error initializing storage: ${error}`);
+	
+	// Downloads are just an empty object
+	try {
+		const key = LOCAL_STORAGE_KEYS.DOWNLOADS;
+		const value = await chrome.storage.local.get(key);
+		if ( typeof value[key] === 'undefined' ) {
+			await chrome.storage.local.set({[key]: {}});
 		}
+	} catch (error) {
+	}
+
+	// Settings make sure all values are present
+	try {
+		const key = LOCAL_STORAGE_KEYS.SETTINGS;
+		const value = await chrome.storage.local.get(key);
+		const settings = value[key];
+		if ( settings === 'undefined' || !Settings.safeParse(settings).success ) {
+			await chrome.storage.local.set({[key]: DEFAULT_SETTINGS});
+		}
+	} catch (error) {
 	}
 
 	// DEBUG
-	const storage = await chrome.storage.local.get();
-	console.log(`Initialized storage to ${JSON.stringify(storage, null, 2)}`);
+	// const storage = await chrome.storage.local.get();
+	// console.log(`Initialized storage to ${JSON.stringify(storage, null, 2)}`);
 });
 
 
@@ -599,30 +648,33 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 
 			if ( !( success && !!imports ) ) {
 				console.error(`Error with ${action} payload: ${error!.message}`);
-				sendResponse(false);
-				return;
+				// sendResponse(false);
+				return false;
 			}
 
 			// console.log('background beginning import')
 			try {
 				await importDownloads(imports);
+				sendResponse(true);
 			
 			} catch (error) {
 				console.error(`Unexpected error importing downloads: ${error}`);
 				sendResponse(false);
 			}
 
-			break;
+			return true;
 		
 		// TMP Clearing downloads
 		case ClearKnownDownloadsMessage.shape.action.value:
 			try {
 				await clearKnownDownloads();
+				sendResponse(true);
 			} catch (error) {
 				console.error(`Error clearing downloads: ${error}`);
+				sendResponse(false);
 			}
 			
-			break;
+			return true;
 		
 		// Saving a new download from thread page
 		case SaveDownloadMessage.shape.action.value: {
@@ -639,13 +691,15 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 			
 			try {
 				await saveDownloadPrompt(download);
+				sendResponse(true);
 
 			// Unexpected error counts as a cancel
 			} catch (error) {
 				console.error(`Unexpected error during save-download prompt: ${error}`);
+				sendResponse(false);
 			}
 
-			break;
+			return true;
 		}
 
 		// Updating a download from thread page
@@ -663,13 +717,15 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 			
 			try {
 				await updateDownloadPrompt(update);
+				sendResponse(true);
 
 			// Unexpected error counts as a cancel
 			} catch (error) {
 				console.error(`Unexpected error during update-download prompt: ${error}`);
+				sendResponse(false);
 			}
 			
-			break;
+			return true;
 		}
 	}
 

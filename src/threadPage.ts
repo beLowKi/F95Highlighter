@@ -5,6 +5,9 @@ import { getUserDownloads } from "utils/func";
 
 // console.log("thread page content script loaded");
 
+// FIXME after adding a download, clicking another link
+// back in the thread tab will still trigger 'save-download' popup
+
 
 /**
  * Returns the Media on this page
@@ -77,7 +80,7 @@ function getPageMedia(): Media | null {
 
 
 async function handleDownloadLinkClicked(media: Media) : Promise<void> {
-    console.log("Download link clicked");
+    // console.log("Download link clicked");
 
     /**
      *      1) Message popup so it can do 'Would you like to save this download?' prompt
@@ -114,7 +117,7 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
             }
         }
 
-        console.log('Existing download found; sending update prompt message');
+        // console.log('Existing download found; sending update prompt message');
         await chrome.runtime.sendMessage(JSON.stringify(msg));
     
     } else {
@@ -123,7 +126,7 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
             payload: newDownload
         };
 
-        console.log('No existing download found; sending save download prompt message');
+        // console.log('No existing download found; sending save download prompt message');
         await chrome.runtime.sendMessage(JSON.stringify(msg));
     }
 }
@@ -131,26 +134,16 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
 
 async function main(): Promise<void> {
     
-    // TODO first check if the media on this page is already a known download
+    // First check if the media on this page is already a known download
     const media = getPageMedia();
     if ( media === null ) {
+        // TODO popup?
         console.error('Failed to get page media');
         return;
     }
-
-    // const downloads = await getUserDownloads();
-    // if ( downloads === null ) {
-    //     console.error('Downloads not initialized');
-    //     return;
-    // }
-    
-    // if ( media.mediaId in downloads ) {
-    //     console.log('Media on this page is already downloaded');  // DEBUG
-    //     return;
-    // }
     
     const linkEls = document.querySelectorAll('article article div span a.link, div.message-userContent article a.link');
-    console.log(`Found ${linkEls.length} linkEls`);
+    // console.log(`Found ${linkEls.length} linkEls`);
 
     // const test = Array.from(linkEls).map(l => l.textContent);
     // console.log(JSON.stringify(test));
@@ -198,7 +191,7 @@ async function main(): Promise<void> {
     });
 
     // DEBUG
-    console.log(`${downloadLinks.length} Links post download filter: ${JSON.stringify(downloadLinks.map(l => l.textContent))}`);
+    // console.log(`${downloadLinks.length} Links post download filter: ${JSON.stringify(downloadLinks.map(l => l.textContent))}`);
 }
 
 

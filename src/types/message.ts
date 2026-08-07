@@ -135,3 +135,15 @@ export const UpdateDownloadPopupMessage = Message.safeExtend({
 })
 
 export type UpdateDownloadPopupMessage = z.infer<typeof UpdateDownloadPopupMessage>;
+
+
+/**
+ * Message sent when an action requiring the user be logged
+ * in to f95 is triggered without the user actually being logged in.
+ */
+export const UserNotLoggedInMessage = Message.safeExtend({
+	action:		z.literal('user-not-logged-in'),
+	payload:	z.never().optional()
+});
+
+export type UserNotLoggedInMessage = z.infer<typeof UserNotLoggedInMessage>;
