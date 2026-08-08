@@ -82,25 +82,20 @@ function getPageMedia(): Media | null {
 async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     // console.log("Download link clicked");
 
-    /**
-     *      1) Message popup so it can do 'Would you like to save this download?' prompt
-     *      2) Response should be boolean YES|NO
-     *      3) If NO: return
-     *      4) Create MediaDownload
-     *      5) Save download to storage
-     */
-
     const downloads = await getUserDownloads();
     if ( downloads === null ) {
         console.error('Downloads not initialized');
         return;
     }
     
+    // DEBUG
+    // console.log(`Downloads: ${JSON.stringify(downloads, null, 2)}`);
+    
     // Sending 'update' message if existing download
     // with certainty < 1.0; otherwise, 'addNew' message.
     // The user confirming to update is assumed to mean
     // that it's a correct match.
-    const existingDownload = downloads[media.mediaId];
+    const existingDownload = downloads[+media.mediaId];
     const newDownload: MediaDownload = {
         name: media.title,
         mediaId: media.mediaId,
@@ -108,27 +103,33 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
         deleted: false
     };
 
-    if ( !!existingDownload && existingDownload.certainty < 1.0 ) {
-        const msg: UpdateDownloadMessage = {
+    // DEBUG
+    console.log(`Existing download: ${JSON.stringify(existingDownload, null, 2)}`);  
+    
+    let msg: UpdateDownloadMessage | SaveDownloadMessage;
+    
+    // New download
+    if ( !!!existingDownload ) {
+        msg = {
+            action: 'save-download-prompt',
+            payload: newDownload
+        };
+        
+    // Existing download has different name or lower certainty;
+    // asks user if they want to update to new info
+    } else if ( existingDownload.name !== newDownload.name || existingDownload.certainty < 1.0 ) {
+        msg = {
             action: 'update-download-prompt',
             payload: {
                 old: existingDownload,
                 new: newDownload,
             }
-        }
-
-        // console.log('Existing download found; sending update prompt message');
-        await chrome.runtime.sendMessage(JSON.stringify(msg));
-    
-    } else {
-        const msg: SaveDownloadMessage = {
-            action: 'save-download-prompt',
-            payload: newDownload
         };
 
-        // console.log('No existing download found; sending save download prompt message');
-        await chrome.runtime.sendMessage(JSON.stringify(msg));
-    }
+    // Nothing happens otherwise
+    } else return;
+    
+    await chrome.runtime.sendMessage(JSON.stringify(msg));
 }
 
 

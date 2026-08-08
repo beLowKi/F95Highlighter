@@ -1,9 +1,62 @@
 import { useEffect, useState } from "react";
-import { Button, ButtonGroup, Col, Modal, Spinner } from "react-bootstrap";
+import { Button, Col, Image, Modal, Row, Spinner } from "react-bootstrap";
 import type { MediaDownload } from "types/data";
 import { Message, SaveDownloadPopupMessage, UpdateDownloadPopupMessage } from "types/message";
 
 import styles from "./ThreadPopup.module.css";
+import rightArrow from "../../public/icons/right-chevron.png";
+import { truncateStr } from "utils/func";
+
+
+function ThreadDialogue(args: { 
+    title:      string, 
+    content?:    JSX.Element,
+    onSubmit:   (x: boolean) => void
+}) {
+
+    const { title, content, onSubmit } = args;
+    
+    const body = ( !!content )
+        ? <Modal.Body >
+            <div className={`container-fluid p-2 m-0 ${styles.dialogueBody}`}>
+                {content}
+            </div>
+        </Modal.Body>
+
+        : undefined;
+    
+    return (
+        <div className={styles.dialogue}>
+            <Modal.Title className={`${styles.dialogueTitle} fs-4 word-wrap`}>
+                {title}
+            </Modal.Title>
+            
+            {body}
+            
+            <Modal.Footer as="div" className={`${styles.dialogueButtonContainer} row`}>
+                <Col className="d-flex align-items-center justify-content-center">
+                    <div>
+                        <Button className={`${styles.dialogueButton} d-inline-flex justify-content-center align-items-center`}
+                            variant="primary"
+                            onClick={() => onSubmit(true)}>
+                            Yes
+                        </Button>
+                    </div>
+                </Col>
+                
+                <Col className="d-flex align-items-center justify-content-center">
+                    <div>
+                        <Button className={`${styles.dialogueButton} d-inline-flex justify-content-center align-items-center`}
+                            variant="secondary"
+                            onClick={() => onSubmit(false)}>
+                            No
+                        </Button>
+                    </div>
+                </Col>                
+            </Modal.Footer>
+        </div>
+    );
+}
 
 
 function SaveNewDownload(args: { 
@@ -12,25 +65,34 @@ function SaveNewDownload(args: {
 }) {
     
     const { download, onSubmit } = args;
+    const content = (
+        <div className="d-flex h-100 align-items-center justify-content-center">
+            <div>
+                <h1 className="fs-4 text-center">{truncateStr(download.name, 100)}</h1>
+            </div>
+        </div>
+    );
+    
+    return (<ThreadDialogue 
+        title={`Add New Download?`}
+        content={content}
+        onSubmit={onSubmit}/>);
+}
+
+
+function MediaDownloadDisplay(args: { download: MediaDownload, maxNameLength: number }) {
+    const { download, maxNameLength } = args;
+    const displayName = truncateStr(download.name, maxNameLength);
 
     return (
-        <div className="d-flex align-items-center justify-content-center">
-            <div>
-                <Modal.Title>Add Download for {download.name}?</Modal.Title>
-                
-                <Modal.Footer as="div" className="row">
-                    <Col>
-                        <Button type="submit" onClick={() => onSubmit(true)}>
-                            Yes
-                        </Button>
-                    </Col>
-                    <Col>
-                        <Button type="reset" onClick={() => onSubmit(false)}>
-                            No
-                        </Button>
-                    </Col>
-                </Modal.Footer>
-            </div>
+        <div className="container">
+            <Row className="d-flex align-items-center justify-content-center p-1">
+                <p>{displayName}</p>
+            </Row>
+
+            <Row className="d-flex align-items-center justify-content-center p-1">
+                <p>{(download.certainty * 100).toFixed(2)}%</p>
+            </Row>
         </div>
     );
 }
@@ -43,29 +105,44 @@ function UpdateDownload(args: {
 }) {
 
     const { old, new: newDownload, onSubmit } = args;
+
+    // TODO setting somewhere or calculated from dialogue box height? idk
+    const maxNameLength = 30;
     
-    return (
-        <div className="d-flex align-items-center justify-content-center">
-            <div>
-                <Modal.Title>Update Download for {old.name}?</Modal.Title>
+    const content = (
+        <div className="d-flex h-100 align-items-center justify-content-center">
+            <div className="d-flex text-center text-break align-items-center">
+                <div 
+                    className={`d-inline-block h-100 align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
+                    
+                    <MediaDownloadDisplay download={old} maxNameLength={maxNameLength}/>
+
+                </div>
                 
-                <Modal.Body>
-                    {/* TODO compare old and new */}
-                </Modal.Body>
-                
-                <Modal.Footer>
-                    <ButtonGroup>
-                        <Button type="submit" onClick={() => onSubmit(true)}>
-                            Confirm
-                        </Button>
-                        <Button type="reset" onClick={() => onSubmit(false)}>
-                            Cancel
-                        </Button>
-                    </ButtonGroup>
-                </Modal.Footer>
+                <div 
+                    className={`d-inline-block ${styles.updateDialogueArrowContainer}`}>
+
+                    {/* <div className="container">
+                        <p>{'->'}</p>
+                    </div> */}
+
+                    <Image src={rightArrow} fluid/>
+
+                </div>
+
+                <div className={`d-inline-block align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
+
+                    <MediaDownloadDisplay download={newDownload} maxNameLength={maxNameLength}/>
+
+                </div>
             </div>
         </div>
     );
+    
+    return (<ThreadDialogue
+        title={`Update Download?`}
+        content={content}
+        onSubmit={onSubmit}/>);
 }
 
 
@@ -84,7 +161,7 @@ export function ThreadPopup() {
             sendResponse:   (x?: any) => void,
         ) => {
 
-            console.log('Received message in main popup');
+            console.log('Received message in thread popup');
             
             // Parsing message
             const { 
@@ -109,7 +186,7 @@ export function ThreadPopup() {
                         return false;
                     }
                     
-                    // console.log('Creating confirm new download dialogue');
+                    console.log('Creating confirm new download dialogue');
 
                     setContent(<SaveNewDownload download={download} onSubmit={(yes) => {
                         sendResponse(yes);
@@ -138,8 +215,6 @@ export function ThreadPopup() {
                     return true;
                 }
             }
-
-            return true;
         }
 
         // Connecting listener

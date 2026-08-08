@@ -2,6 +2,8 @@ import { LocalStorage, MediaDownload, Settings } from "types/data";
 import { LOCAL_STORAGE_KEYS } from "utils/const";
 import { getUserDownloads, getUserSettings } from "utils/func";
 
+// FIXME deleting downloads doesn't trigger a refresh?
+
 // console.log("latest updates content script loaded");
 
 // Stores the colors used to show different certainties
@@ -12,20 +14,25 @@ let highlights: Settings['highlights'] = {
     highCertaintyColor: ''    
 };
 
+// Stores Media downloads
+let downloads: LocalStorage['downloads'];
+
 
 /**
  * Updates a Media tile <div>'s style based on the given download.
  */
 function updateTile(tile: HTMLDivElement, download?: MediaDownload) {
+
+    // Resetting inline style
     if ( download === undefined ) {
-        // TBD I think media without a download should
-        // just display as normal
+        tile.style.padding = '0';
+        tile.style.backgroundColor = '';
         return;
     }
     
     // DEBUG
-    const titleEl = tile.querySelector('header div h2');
-    console.log(`Updating tile for ${titleEl?.textContent}`);
+    // const titleEl = tile.querySelector('header div h2');
+    // console.log(`Updating tile for ${titleEl?.textContent}`);
     
     // TODO make this customizable
     tile.style.padding = '4px';
@@ -49,7 +56,7 @@ function updateTile(tile: HTMLDivElement, download?: MediaDownload) {
  * Updates the tiles of the itemWrapper.
  * This is called when media tiles are loaded
  */
-async function updateTiles( itemWrapper: HTMLElement, downloads: LocalStorage['downloads'] ) {
+async function updateTiles( itemWrapper: HTMLElement ) {
     // Every div in item wrapper represents a Media
     // and it should have an attribute called 'data-thread-id' which
     // contains the its Media's ID. It also has a single <a> tag child
@@ -101,9 +108,6 @@ async function main(): Promise<void> {
     }
     
     // Initial load of downloads and settings
-    // let downloads = await getUserDownloads();
-
-    let downloads: LocalStorage['downloads'];
     getUserDownloads().then(res => downloads = res);
     getUserSettings().then(res => highlights = res.highlights);
     
@@ -120,7 +124,7 @@ async function main(): Promise<void> {
             }
             
             const taskId = setTimeout(async () => {
-                updateTiles(itemWrapper, downloads);
+                updateTiles(itemWrapper);
                 numTilesUpdated = itemWrapper.children.length;
                 res();
             }, 500);

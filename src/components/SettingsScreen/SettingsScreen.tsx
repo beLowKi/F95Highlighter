@@ -56,6 +56,7 @@ export function SettingsScreen(args: { settings: Settings }) {
                 <Form.Group>
                     <OverlayTrigger
                         delay={{ show: 350, hide: 200 }}
+                        placement="bottom"
                         overlay={<Tooltip>Number of top search results checked per imported download</Tooltip>}>
 
                         <Form.Label>

@@ -2,12 +2,13 @@ import { Accordion } from "react-bootstrap";
 import { BASE_SEARCH_URL, EX_SEARCH_PARAMS } from "utils/const";
 import { prepSearchQuery } from "utils/func";
 
+import styles from "./InfoScreen.module.css";
+
+
 export function InfoScreen(args: {
     fontSize: string
 }) {
 
-    const { fontSize } = args;
-    
     // TODO explain how importing and downloading from threads works
     // mention that all it's really checking is the name of the item
     // and trying to match it to Media on f95 using its search feature
@@ -20,14 +21,18 @@ export function InfoScreen(args: {
     });
     
     return (
-        <div className="p-2 pb-4 overflow-scroll" style={{ height: '400px', fontSize }}>
-            <p className="text-break">
+        // <div className="p-2 pb-4 overflow-scroll" style={{ height: '400px', fontSize }}>
+        <div className={styles.main}>
+            <p className="p-2 text-break">
                 This extension tracks what you've downloaded from f95zone.to and highlights it on the latest-updates page. You tell it what you've downloaded by either importing folders/files directly or through a popup which appears when clicking a download link from a thread page. For more details, expand the sections below.
             </p>
 
-            <Accordion>
-                <Accordion.Item eventKey="0">
-                    <Accordion.Header className="text-md">Importing</Accordion.Header>    
+            <Accordion flush>
+                <Accordion.Item eventKey="0" className="bg-dark text-white">
+                    <Accordion.Button className="bg-secondary text-white">
+                        Importing
+                    </Accordion.Button>
+
                     <Accordion.Body>
                         <p>
                             When importing a download, the extension attempts to match it to a thread page. This boils down to converting a folder/file name into keywords, performing a search on f95zone, and scraping the results for the most likely match. For some example searches:
@@ -49,21 +54,29 @@ export function InfoScreen(args: {
                     </Accordion.Body>
                 </Accordion.Item> 
 
-                <Accordion.Item eventKey="1">
-                    <Accordion.Header className="text-md">Downloading/Updating From a Thread</Accordion.Header>    
+                <Accordion.Item eventKey="1" className="bg-dark text-white">
+                    <Accordion.Button className="bg-secondary text-white">
+                        Downloading/Updating From a Thread
+                    </Accordion.Button>
+                    
                     <Accordion.Body>
                         You can add downloads manually through a popup which appears any time you click a download link on a thread page. The same popup will allow you to either create a new download or update an existing one.
                     </Accordion.Body>
                 </Accordion.Item>
 
-                <Accordion.Item eventKey="2">
-                    <Accordion.Header className="text-md">Attributions</Accordion.Header>
+                <Accordion.Item eventKey="2" className="bg-dark text-white">
+                    <Accordion.Button className="bg-secondary text-white">
+                        Attributions
+                    </Accordion.Button>
+                    
                     <Accordion.Body>
                         <a href="https://www.flaticon.com/free-icons/input" title="input icons">Input icons created by Fathema Khanom - Flaticon</a>
                         <br/>
                         <a href="https://www.flaticon.com/free-icons/info" title="info icons">Info icons created by Anggara - Flaticon</a>
                         <br/>
                         <a href="https://www.flaticon.com/free-icons/settings" title="settings icons">Settings icons created by herikus - Flaticon</a>
+                        <br/>
+                        <a href="https://www.flaticon.com/free-icons/next" title="next icons">Next icons created by tenBystry - Flaticon</a>
                     </Accordion.Body>
                 </Accordion.Item>
             </Accordion>

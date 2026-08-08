@@ -23,6 +23,23 @@ import {
 
 
 /**
+ * Truncates a string to, at most, a certain length
+ */
+export function truncateStr(
+	str: string, 
+	length: number,
+	cutoff: string = '...'
+): string {
+
+	const maxLength = Math.max(0, (length - cutoff.length));
+	
+	return ( str.length > maxLength )
+        ? `${str.slice(0, maxLength)}${cutoff}`
+        : str;
+}
+
+
+/**
  * Returns whether the popup is currently active
  */
 export function isPopupActive(): boolean {

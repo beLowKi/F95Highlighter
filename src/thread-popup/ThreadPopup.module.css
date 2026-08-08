@@ -1,6 +1,66 @@
+@import url("../styles.css");
+
+
 .threadPopup {
-    width: 450px;
-    height: 200px;
-    background-color: rgb(30, 30, 30);
+    width: 500px;
+    height: auto;
+    background-color: var(--bg-primary);
     color: white;
+    padding: 0px;
+    padding-bottom: 5px;
+}
+
+.dialogue {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+}
+
+.dialogueTitle {
+    text-align: center;
+    padding: 10px;
+    background-color: var(--bg-secondary);
+}
+
+.dialogueBody {
+    width: 100%;
+    height: 150px;
+    padding: 5px;
+    overflow: hidden;
+}
+
+.dialogueButtonContainer {
+    padding: 5px;
+    padding-bottom: 10px;
+}
+
+.dialogueButton {
+    width: 130px;
+    height: 40px;
+    margin: 0px;
+    padding: 0px;
+}
+
+.updateDialogueDownloadContainer {
+    width: 45%;
+    height: 100%;
+}
+
+.updateDialogueArrowContainer {
+    width: 10%;
+    height: 100%;
+}
+
+.updateDialogueContent {
+    font-size: 13px;
+}
+
+.updateDialogueTextContainer {
+    height: 50%;
+    width: 100%;
+    padding: 5px;
+    font-size: small;
+    overflow-x: hidden;
+    overflow-y: scroll;
 }
