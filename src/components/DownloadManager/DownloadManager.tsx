@@ -1,10 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePromiseModal } from "@prezly/react-promise-modal";
 
-import type { ConflictResolutionPolicy } from "types/data";
+import type { ConflictResolutionPolicy, ImportResults } from "types/data";
 
 import { 
-    ClearKnownDownloadsMessage, GetConflictPolicyMessage, Message, 
+    ClearKnownDownloadsMessage, GetConflictPolicyMessage, ImportStatusMessage, Message, 
     ScrapeSearchResultsMessage, ShowImportResultsMessage, 
     type ImportDownloadsMessage 
 } from "types/message";
@@ -12,7 +12,8 @@ import {
 import { EXE_FILENAME_REGEX } from "utils/const";
 import { scrapeSearchResults } from "utils/func";
 import ConflictResolutionDialogue from "../ConflictPolicyDialogue/ConflictPolicyDialogue";
-import { Button, ButtonGroup, Spinner } from "react-bootstrap";
+import { Button, ButtonGroup, ProgressBar, Spinner } from "react-bootstrap";
+import ImportResultsDisplay from "components/ImportResultsDisplay/ImportResultsDisplay";
 
 
 // Directory picker options
@@ -31,9 +32,13 @@ const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
  *      (and what search query was used for them?)
  */
 export function DownloadManager(args: {
-    isBusy:             boolean,
-    setIsBusy:          (x: boolean) => void,
+    isBusy?:             boolean,
+    // setIsBusy:          (x: boolean) => void,
 }) {
+    
+    const [isBusy, setIsBusy] = useState(!!args.isBusy);
+    const [importStatus, setImportStatus] = useState<ImportStatusMessage['payload']>()
+    
     // Invokes modal that gets conflict policy
     const collectConflictPolicy = usePromiseModal<
         ConflictResolutionPolicy, 
@@ -47,28 +52,18 @@ export function DownloadManager(args: {
         />
     ));
 
-    // // Invokes modal that gets confirmation on saving a new download
-    // const confirmNewDownload = usePromiseModal<boolean, { download: MediaDownload }>(
-    //     ({ show, onSubmit, onDismiss, download }) => (
-    //         <NewDownloadConfirm 
-    //             show={show}
-    //             onDismiss={onDismiss}
-    //             onSubmit={onSubmit}
-    //             download={download}
-    //         />
-    // ));
-    
-    // // Invokes modal that gets confirmation on updating a download
-    // const confirmDownloadUpdate = usePromiseModal<boolean, { old: MediaDownload, new: MediaDownload }>(
-    //     ({ show, onSubmit, onDismiss, old, new: newDownload }) => (
-    //         <UpdateDownloadConfirm 
-    //             show={show}
-    //             onDismiss={onDismiss}
-    //             onSubmit={onSubmit}
-    //             old={old} 
-    //             new={newDownload}                
-    //         />
-    // ));
+    // Invokes popup displaying import results
+    const showImportResults = usePromiseModal<
+        void, 
+        { results: ImportResults }
+    >(({ show, onSubmit, onDismiss, results }) => (
+        <ImportResultsDisplay 
+            show={show} 
+            onSubmit={onSubmit} 
+            onDismiss={onDismiss} 
+            results={results}
+            />
+    ));
     
 
     /**
@@ -158,10 +153,29 @@ export function DownloadManager(args: {
                         console.error(`Popup received invalid results:\n${error.message}`);
                         return false;
                     }
-                        
-                    // TODO better display
+                    
+                    setIsBusy(true);
+                    setImportStatus(undefined);
+                    await showImportResults.invoke({ results });
+                    setIsBusy(false);
+                    
+                    // console.log(`Import results:\n${JSON.stringify(results, null, 2)}`);
+                    break;
+                }
 
-                    console.log(`Import results:\n${JSON.stringify(results, null, 2)}`);
+                case ImportStatusMessage.shape.action.value: {
+                    const { data: status, error, success } =    
+                        ImportStatusMessage.shape.payload.safeParse(payload);
+                        
+                    if (!success) {
+                        console.error(`Popup received broken import-status heartbeat:\n${error.message}`);
+                        return false;
+                    }
+                    
+                    // TODO update progress bar
+                    console.log(`Heartbeat:\n${JSON.stringify(payload, null, 2)}`);
+                    setImportStatus(status);
+                        
                     break;
                 }
             }
@@ -181,7 +195,7 @@ export function DownloadManager(args: {
      * Begins download import
      */
     async function handleImportDownloads(): Promise<void> {
-        args.setIsBusy(true);
+        setIsBusy(true);
         
         let directory: FileSystemDirectoryHandle;
         
@@ -190,7 +204,7 @@ export function DownloadManager(args: {
 
         } catch (error) {
             console.error(`Unexpected Error: ${error}`);
-            args.setIsBusy(false);
+            setIsBusy(false);
             return;
         }
         
@@ -238,7 +252,7 @@ export function DownloadManager(args: {
 
         await chrome.runtime.sendMessage(JSON.stringify(message));
         
-        args.setIsBusy(false);
+        setIsBusy(false);
     }
 
     /**
@@ -253,7 +267,7 @@ export function DownloadManager(args: {
      * TMP tells background to clear downloads
      */
     async function handleDeleteDownloads(): Promise<void> {
-        args.setIsBusy(true);
+        setIsBusy(true);
         
         const message: ClearKnownDownloadsMessage = {
             action: 'clear-known-downloads',
@@ -263,20 +277,37 @@ export function DownloadManager(args: {
         const res = await chrome.runtime.sendMessage(JSON.stringify(message));
         // TODO handle response if there is one
 
-        args.setIsBusy(false);
+        setIsBusy(false);
     }
     
 
     // Popup only contains a dialogue's modal if its active
-    const activeDialogue = [collectConflictPolicy]
+    const activeDialogue = [collectConflictPolicy, showImportResults]
         .filter(d => d.isDisplayed)
         .at(0);
 
     let content: JSX.Element;
+    
+    // Showing progress bar for import status
+    if ( !!importStatus ) {
+        const ratio = Math.round((importStatus.processed / importStatus.total) * 100);
+        console.log('Progress ratio: ', ratio);
+
+        content = (
+            <div className="vw-100 p-4">
+                <ProgressBar 
+                    striped animated visuallyHidden
+                    variant="info"
+                    now={ratio} max={importStatus.total}
+                    />
+            </div>
+        );
         
-    if ( args.isBusy ) {
+    // Showing spinner for misc busy status
+    } else if ( isBusy ) {
         content = <Spinner animation="border" variant="primary"/>;
-        
+    
+    // Standard content for deleting and importing    
     } else {
         content = (<>
             <ButtonGroup size="sm">
@@ -295,7 +326,9 @@ export function DownloadManager(args: {
             className='d-flex align-items-center justify-content-center'
             style={{ height: ( !!activeDialogue ) ? '350px' : '100px' }}>
 
-            <div>{content}</div>
+            <div className="container d-flex align-items-center justify-content-center">
+                {content}
+            </div>
             
             {activeDialogue?.modal}
         </div>

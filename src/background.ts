@@ -9,7 +9,7 @@ import {
 	Settings,
 } from "types/data";
 import { 
-	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, Message, 
+	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, ImportStatusMessage, Message, 
 	SaveDownloadMessage, 
 	SaveDownloadPopupMessage, 
 	UpdateDownloadMessage, 
@@ -219,14 +219,59 @@ async function importDownloads(items: string[]): Promise<void> {
 	const conflicts: Record<number, MediaDownloadConflict> = {};
 	const failedItems = new Set<string>();
 	
+	// Number of downloads processed;
+	// used for heartbeat message to popup
+	let queuedUpdate: Timer;
+	let processedDownloads: number = 0;
+	
 	// Limits number of concurrent promises so
 	// there aren't too many requests being sent to f95
 	const limit = pLimit(CONCURRENT_SEARCH_LIMIT);
-	const queue = items.map((item) => limit(() => getMediaDownload(item)));
+	const queue = items.map((item) => limit(async () => {
+		let d = null;
+		
+		try {
+			d = await getMediaDownload(item);			
+		} finally {
+			processedDownloads++;
+			return d;
+		}
+	}));
 	
-	try {
-		const foundDownloads = await Promise.all(queue);
+	// Loops for as long as import takes--occasionally
+	// sending a status update to popup
+	const loop = async () => {
+		if ( processedDownloads >= queue.length ) {
+			console.log(`Processed ${processedDownloads} out of ${queue.length}; stopping heartbeat`);
+			clearTimeout(queuedUpdate);
+			return;
+		}
+		
+		// TODO make this a constant somewhere
+		queuedUpdate = setTimeout(loop, 250);
+		
+		const msg: ImportStatusMessage = {
+			action: 'import-status-update',
+			payload: {
+				failedItems: 	Array.from(failedItems),
+				total: 			queue.length,
+				processed: 		processedDownloads,
+			}
+		};
+		
+		console.log('Sending heartbeat');
+		await chrome.runtime.sendMessage(JSON.stringify(msg));
+	}
+	
+	loop().then();
 
+	try {
+		// FIXME closing popup should abort this
+		// rn it continues as normal, so if you re-open the popup everything (seems)
+		// to just continue as usual. If popup is still closed then, the results message fails
+		// to send so the process fails as expected, but it should stop sooner than that.
+		const foundDownloads = await Promise.all(queue);
+		
 		for (const [index, download] of foundDownloads.entries()) {
 
 			// Updating failed items

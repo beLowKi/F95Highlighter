@@ -147,3 +147,19 @@ export const UserNotLoggedInMessage = Message.safeExtend({
 });
 
 export type UserNotLoggedInMessage = z.infer<typeof UserNotLoggedInMessage>;
+
+
+/**
+ * "Heartbeat" message from background to popup to track
+ * the status of longer imports.
+ */
+export const ImportStatusMessage = Message.safeExtend({
+	action:		z.literal('import-status-update'),
+	payload:	z.strictObject({
+		total:			z.number(),
+		failedItems: 	z.array(z.string()),
+		processed:		z.number(),
+	})
+});
+
+export type ImportStatusMessage = z.infer<typeof ImportStatusMessage>;

@@ -18,10 +18,6 @@ This leads to more failed imports because some's thread use camel-case always an
 
 ## TODO
 
-### Loading/Progress
-
-
-
 ### Train/Tune an AI to Match Download Files to Thread Titles
 
 It would probably be much more reliable to use an AI to match download files to threads, but it'd be more complicated to implement. This would involve either making an AI from scratch--and figuring out how the extension would communicate with it--or tuning an existing one which adds costs unless there's a free tunable AI service out there?

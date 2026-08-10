@@ -77,7 +77,6 @@ export function MainPopup() {
         }
 
         // Connecting listeners
-        // chrome.runtime.onMessage.addListener(messageListener);
         chrome.storage.local.onChanged.addListener(storageListener);
         
         // Triggers refresh once to start
@@ -85,7 +84,6 @@ export function MainPopup() {
         
         // Removes listeners when unmounting
         return () => {
-            // chrome.runtime.onMessage.removeListener(messageListener);
             chrome.storage.local.onChanged.removeListener(storageListener);
         }
     }, [])
@@ -108,7 +106,8 @@ export function MainPopup() {
                             <DownloadManager 
                                 // setActiveDialogue={setActiveDialogue}
                                 isBusy={isBusy}
-                                setIsBusy={setIsBusy}/>
+                                // setIsBusy={setIsBusy}
+                                />
                         </TabPane>
                         
                         {/* Info Tab */}
