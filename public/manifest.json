@@ -21,15 +21,15 @@
   },
   
   "permissions": [
+    "tabs",
     "cookies",
     "storage",
-    "unlimitedStorage",
-    "nativeMessaging"
+    "unlimitedStorage"
   ],
 
   "content_scripts": [
     {
-      "matches": ["https://f95zone.to/sam/latest_alpha*"],
+      "matches": ["https://f95zone.to/sam/latest_alpha/*"],
       "js": ["latestUpdates.js"]
     }, {
       "matches": ["https://f95zone.to/threads/*"],

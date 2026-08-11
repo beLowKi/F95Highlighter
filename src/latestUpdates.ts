@@ -2,9 +2,12 @@ import { LocalStorage, MediaDownload, Settings } from "types/data";
 import { LOCAL_STORAGE_KEYS } from "utils/const";
 import { getUserDownloads, getUserSettings } from "utils/func";
 
-// FIXME deleting downloads doesn't trigger a refresh?
-
 // console.log("latest updates content script loaded");
+
+// TODO it'd be cool if there was a 'click to add' feature
+// where clicking a Media tile adds it as a download.
+// I'm thinking a toggle in the popup that also prevents
+// it from closing when clicked off of?
 
 // Stores the colors used to show different certainties
 let highlights: Settings['highlights'] = {

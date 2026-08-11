@@ -90,7 +90,7 @@ export function MainPopup() {
     
 
     return (
-        <div className={styles.mainPopup}>
+        <div className={`container ${styles.mainPopup}`}>
             <Modal.Dialog>
                 
                 {/* Title Header */}
@@ -100,14 +100,10 @@ export function MainPopup() {
                 
                 {/* Window content */}
                 <TabContainer defaultActiveKey={TAB_KEYS.DOWNLOADS}>
-                    <TabContent>        
+                    <TabContent className="container overflow-hidden p-0">        
                         {/* DownloadManager Tab */}
                         <TabPane eventKey={TAB_KEYS.DOWNLOADS}>
-                            <DownloadManager 
-                                // setActiveDialogue={setActiveDialogue}
-                                isBusy={isBusy}
-                                // setIsBusy={setIsBusy}
-                                />
+                            <DownloadManager isBusy={isBusy}/>
                         </TabPane>
                         
                         {/* Info Tab */}
@@ -154,40 +150,6 @@ export function MainPopup() {
             </Modal.Dialog>
         </div>
     );
-    
-    
-    // return (<>
-    //     <Modal.Dialog className="p-0" style={{ 
-    //         width: (!!activeDialogue) ? "450px" : "350px",
-    //         height: (!!activeDialogue) ? "350px" : "auto"
-    //     }}>
-            
-    //         {/* Title Header */}
-    //         <Modal.Header className="bg-dark p-2 text-light text-center">
-    //             <h1 className="w-100 text-2xl">F95 Highlighter</h1>
-    //         </Modal.Header>
-            
-    //         {/* Main content */}
-    //         <Modal.Body>
-    //             <div className="d-flex p-4 align-items-center justify-content-center">
-    //                 <div>{ content }</div>
-    //             </div>
-    //         </Modal.Body>
-
-    //         <Modal.Footer>
-    //             Settings and Help buttons will go here
-
-    //             <span>
-
-                    
-    //                 {/* Attribution for icons */}
-    //                 <a href="https://www.flaticon.com/free-icons/settings" title="settings icons">Settings icons created by Pixel perfect - Flaticon</a>
-    //             </span>
-    //         </Modal.Footer>
-	// 	</Modal.Dialog>
-
-    //     {activeDialogue?.modal}
-    // </>);
 }
 
 

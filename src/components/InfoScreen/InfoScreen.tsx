@@ -77,6 +77,10 @@ export function InfoScreen(args: {
                         <a href="https://www.flaticon.com/free-icons/settings" title="settings icons">Settings icons created by herikus - Flaticon</a>
                         <br/>
                         <a href="https://www.flaticon.com/free-icons/next" title="next icons">Next icons created by tenBystry - Flaticon</a>
+                        <br/>
+                        <a href="https://www.flaticon.com/free-icons/foursquare-check-in" title="foursquare check in icons">Foursquare check in icons created by hqrloveq - Flaticon</a>
+                        <br/>
+                        <a href="https://www.flaticon.com/free-icons/delete" title="delete icons">Delete icons created by Pixel perfect - Flaticon</a>
                     </Accordion.Body>
                 </Accordion.Item>
             </Accordion>

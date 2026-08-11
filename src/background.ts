@@ -9,7 +9,7 @@ import {
 	Settings,
 } from "types/data";
 import { 
-	ClearKnownDownloadsMessage, GetUserLoggedInMessage, ImportDownloadsMessage, ImportStatusMessage, Message, 
+	ClearKnownDownloadsMessage, ImportDownloadsMessage, ImportStatusMessage, Message, 
 	SaveDownloadMessage, 
 	SaveDownloadPopupMessage, 
 	UpdateDownloadMessage, 
@@ -40,7 +40,10 @@ import {
 	isPopupActive,
 } from "utils/func";
 
-import fs from 'node:fs';
+
+// Constants only used in this script that 
+// I don't know where else to put...
+const IMPORT_STATUS_UPDATE_RATE = 250;
 
 
 /**
@@ -110,9 +113,9 @@ async function searchMediaName(
 	}
 
 	// Finding best match among results
-	console.log(
-		`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
-	);
+	// console.log(
+	// 	`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
+	// );
 
 	const sampleSize = ( await getUserSettings() ).searchSampleSize;
 	const sample = searchResults.slice(0, sampleSize);
@@ -240,6 +243,7 @@ async function importDownloads(items: string[]): Promise<void> {
 	
 	// Loops for as long as import takes--occasionally
 	// sending a status update to popup
+	// FIXME large imports send wrong total?
 	const loop = async () => {
 		if ( processedDownloads >= queue.length ) {
 			console.log(`Processed ${processedDownloads} out of ${queue.length}; stopping heartbeat`);
@@ -247,19 +251,20 @@ async function importDownloads(items: string[]): Promise<void> {
 			return;
 		}
 		
-		// TODO make this a constant somewhere
-		queuedUpdate = setTimeout(loop, 250);
+		// Queues next heartbeat
+		queuedUpdate = setTimeout(loop, IMPORT_STATUS_UPDATE_RATE);
 		
 		const msg: ImportStatusMessage = {
 			action: 'import-status-update',
 			payload: {
+				// FIXME this isn't updating correctly
 				failedItems: 	Array.from(failedItems),
 				total: 			queue.length,
 				processed: 		processedDownloads,
 			}
 		};
 		
-		console.log('Sending heartbeat');
+		// console.log('Sending heartbeat');
 		await chrome.runtime.sendMessage(JSON.stringify(msg));
 	}
 	
@@ -348,9 +353,6 @@ async function importDownloads(items: string[]): Promise<void> {
 	}
 
 	// Handling conflicts
-	// console.log(`Conflict policy: ${conflictPolicy}`);
-	// console.log(`Conflicts:\n${JSON.stringify(conflicts, null, 2)}`);
-	
 	// Tracks which media downloads have been updated
 	const updatedMediaIds = new Set<number>();
 
@@ -527,7 +529,7 @@ async function syncDownloads() {
  * Triggers a save-download prompt on the popup
  */
 async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Promise<void> {
-	console.log('Opening prompt ');
+	// console.log('Opening prompt ');
 	
 	// Sets a new popup that handles thread stuff
 	await chrome.action.setPopup({ popup: 'thread-popup/index.html' });
@@ -543,12 +545,12 @@ async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Pro
 	try {
 		const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
 		if ( !!res ) {
-			console.log(`Received truthy response ${res}; saving download:\n${JSON.stringify(download)}`);
+			// console.log(`Received truthy response ${res}; saving download:\n${JSON.stringify(download)}`);
 			await saveDownloads({ [download.mediaId]: download });
 			
 		// DEBUG
 		} else {
-			console.log('New download canceled or user decided not to save');
+			// console.log('New download canceled or user decided not to save');
 		}
 
 	} catch (error) {
@@ -579,17 +581,17 @@ async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): 
 	try {
 		const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
 		if ( !!res ) {
-			console.log(
-				`Received truthy resopnse ${res}; Updating download` +
-				`\nOld: ${JSON.stringify(payload.old)}` +
-				`\nNew: ${JSON.stringify(payload.new)}`
-			);
+			// console.log(
+			// 	`Received truthy resopnse ${res}; Updating download` +
+			// 	`\nOld: ${JSON.stringify(payload.old)}` +
+			// 	`\nNew: ${JSON.stringify(payload.new)}`
+			// );
 	
 			await saveDownloads({ [payload.new.mediaId]: payload.new });
 		
 		// DEBUG
 		} else {
-			console.log('Download update canceled or user decided not to save');
+			// console.log('Download update canceled or user decided not to save');
 		}
 
 	} catch (error) {
@@ -598,35 +600,6 @@ async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): 
 
 	// Resetting popup
 	await chrome.action.setPopup({ popup: 'popup/index.html' });
-}
-
-
-/**
- * Saves user settings to storage.
- * Returns true|false based on if this was successful or not.
- */
-async function saveSettings(settings: Settings): Promise<boolean> {
-	if (
-		!(
-			typeof settings === "object" &&
-			Object.keys(settings).every((k) => typeof k === "string")
-		)
-	) {
-		throw new TypeError("'settings' must be a Record<string, any>");
-	}
-
-	// TODO save settings to chrome.storage
-
-	throw new Error("Not implemented");
-}
-
-
-/**
- * Returns user settings as Record<string, any>
- */
-async function getSettings(): Promise<Settings> {
-	// TODO
-	throw new Error("Not implemented");
 }
 
 
@@ -671,7 +644,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
  * Native message listener; mainly just stuff coming from the popup
  */
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
-	console.log('Message received in background');
+	// console.log('Message received in background');
 	
 	const { data: { action, payload } = {}, error, success } = Message.safeParse(JSON.parse(message));
 	if (!success) {

@@ -1,4 +1,4 @@
-import { LocalStorage, MediaType, Settings, type SearchResult } from "types/data.ts";
+import { LocalStorage, Media, MediaType, Settings, type SearchResult } from "types/data.ts";
 import type { UserNotLoggedInMessage } from "types/message";
 
 import {
@@ -7,19 +7,98 @@ import {
 	DLSITE_CODE_REGEX,
 	FORUM_REGEX,
 	HEX_COLOR_REGEX,
-	INSIDE_BRACKETS_REGEX,
 	LOCAL_STORAGE_KEYS,
 	NUMBER_NO_PRECEDING_REGEX,
-	PART_REGEX,
-	SEARCH_TOKEN_BLACKLIST,
 	SEARCH_TOKEN_DELIMIT_REGEX,
 	SNAKE_SEGMENT_REGEX,
 	THREAD_LINK_MEDIA_ID_REGEX,
 	UPPER_CASE_SPLIT_REGEX,
-	VERSION_NUMBER_REGEX,
-	VOLUME_REGEX,
-	YEAR_MONTH_DAY_REGEX,
 } from "utils/const";
+
+
+/**
+ * Scrapes the Media of a thread page.
+ * This returns null if the scraping failed.
+ */
+export function getThreadMedia(src: Document | string): Media | null {
+	const document: Document = ( typeof src === 'string' )
+		? (new DOMParser()).parseFromString(src, 'text/html')
+		: src;
+	
+	// Getting mediaId from URL
+	const idMatches = THREAD_LINK_MEDIA_ID_REGEX.exec(document.URL);
+	if ( idMatches === null || idMatches.length !== 1 ) {
+		console.error(`Failed to extract Media ID from URL ${document.URL}`);
+		return null;
+	}
+	
+	const mediaId = Number(idMatches[0]);
+	if ( isNaN(mediaId) ) {
+		console.error(`Extracted NaN Media ID from URL ${document.URL}`);
+		return null;
+	}
+	
+	// Getting thread title
+	const titleEl = document.querySelector('div.pageContent div.p-title h1.p-title-value');
+	if ( titleEl === null ) {
+		console.error('Failed to find title element');
+		return null;
+	}
+
+	// Most titles have preceding tags like game engine or completion status, so,
+	// to get just the title of the Media, you can get the last child node.
+	const title = titleEl.childNodes.item(titleEl.childNodes.length - 1).textContent;
+	if ( title === null ) {
+		console.error('Failed to extract title\'s text content from element ', titleEl.textContent);
+		return null;
+	}
+
+	// Getting mediaType from forum name
+	const forumEl = document.querySelector('div.pageContent ul.p-breadcrumbs');
+	if ( forumEl === null ) {
+		console.error('Failed to find forum element');
+		return null;
+	}
+	
+	// DEBUG
+	// console.log('Found forum breadcrumb as ', forumEl.textContent);
+	
+	// There's a whole bunch of whitespace between crumbs, so this removes all that
+	const forumCrumbs = Array.from(forumEl.childNodes)
+		.filter( c => !!c.textContent && c.textContent.trim().length > 0)
+		.map(c => c.textContent!.trim().toUpperCase());
+	
+	// ditto ^ sort of; this element is a breadcrumb and 
+	// the element with the forum text is the last child
+	const forumText = forumCrumbs.at(-1);
+	if ( !!!forumText ) {
+		console.error(`Failed to extract forum's text content from element ${forumEl.textContent}`);
+		return null;
+	}
+	
+	const { data: mediaType, error, success } = MediaType.safeParse(forumText);
+	if ( !success ) {
+		console.error(`Extracted forum text ${forumText} failed MediaType model:\n${error.message}`);
+		return null;
+	}
+	
+	return {
+		mediaId,
+		title,
+		mediaType,
+		threadLink: document.URL,
+	};
+}  
+
+
+/**
+ * Returns the tab currently in focus.
+ */
+export async function getCurrentTab(): Promise<chrome.tabs.Tab> {
+	let queryOptions = { active: true, currentWindow: true };
+	let [tab] = await chrome.tabs.query(queryOptions);
+	return tab;
+}
 
 
 /**
@@ -285,7 +364,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 	// The only <ol> on the page should be the search results
 	const resultsContainer = page.querySelector("ol");
 	if (resultsContainer === null) {
-		console.error("Failed to find search results container");
+		// console.error("Failed to find search results container");
 		return null;	
 	}
 
@@ -294,7 +373,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 	const searchResults: SearchResult[] = [];
 	const listItems = resultsContainer.querySelectorAll("li.block-row");
 	if (listItems.length <= 0) {
-		console.error("No list items were found");
+		// console.error("No list items were found");
 		return null;
 	}
 
@@ -303,7 +382,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 			"div.contentRow div.contentRow-main",
 		);
 		if (content === null) {
-			console.error("Failed to find main content container");
+			// console.error("Failed to find main content container");
 			continue;
 		}
 
@@ -311,7 +390,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 		// from an <a> tag containing both
 		const titleEl = content.querySelector("h3.contentRow-title a");
 		if (titleEl === null) {
-			console.error("Failed to find title element");
+			// console.error("Failed to find title element");
 			continue;
 		}
 
@@ -319,15 +398,15 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 		// /threads/{lower-case title}.{id}/
 		const threadLink = titleEl.getAttribute("href")?.trim();
 		if (!!!threadLink) {
-			console.error("Failed to find thread link");
+			// console.error("Failed to find thread link");
 			continue;
 		}
 
 		const idMatches = THREAD_LINK_MEDIA_ID_REGEX.exec(threadLink);
 		if (idMatches === null || idMatches.length !== 1) {
-			console.error(
-				`Regex matching failed on ${threadLink} ${THREAD_LINK_MEDIA_ID_REGEX.source} ${idMatches}`,
-			);
+			// console.error(
+			// 	`Regex matching failed on ${threadLink} ${THREAD_LINK_MEDIA_ID_REGEX.source} ${idMatches}`,
+			// );
 			continue;
 		}
 
@@ -366,7 +445,7 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 			/forum:(?:\s)?\D+/gi.test(el.textContent),
 		);
 		if (!!!forumEl) {
-			console.error("Failed to find forum element");
+			// console.error("Failed to find forum element");
 			continue;
 		}
 

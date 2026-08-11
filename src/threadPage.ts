@@ -1,82 +1,8 @@
-import { MediaDownload, MediaType, type Media } from "types/data";
+import { MediaDownload, type Media } from "types/data";
 import type { SaveDownloadMessage, UpdateDownloadMessage } from "types/message";
-import { THREAD_LINK_MEDIA_ID_REGEX } from "utils/const";
-import { getUserDownloads } from "utils/func";
+import { getUserDownloads, getThreadMedia } from "utils/func";
 
 // console.log("thread page content script loaded");
-
-// FIXME after adding a download, clicking another link
-// back in the thread tab will still trigger 'save-download' popup
-
-
-/**
- * Returns the Media on this page
- */
-function getPageMedia(): Media | null {
-    // Getting mediaId from URL
-    const idMatches = THREAD_LINK_MEDIA_ID_REGEX.exec(document.URL);
-    if ( idMatches === null || idMatches.length !== 1 ) {
-        console.error(`Failed to extract Media ID from URL ${document.URL}`);
-        return null;
-    }
-    
-    const mediaId = Number(idMatches[0]);
-    if ( isNaN(mediaId) ) {
-        console.error(`Extracted NaN Media ID from URL ${document.URL}`);
-        return null;
-    }
-    
-    // Getting thread title
-    const titleEl = document.querySelector('div.pageContent div.p-title h1.p-title-value');
-    if ( titleEl === null ) {
-        console.error('Failed to find title element');
-        return null;
-    }
-
-    // Most titles have preceding tags like game engine or completion status, so,
-    // to get just the title of the Media, you can get the last child node.
-    const title = titleEl.childNodes.item(titleEl.childNodes.length - 1).textContent;
-    if ( title === null ) {
-        console.error('Failed to extract title\'s text content from element ', titleEl.textContent);
-        return null;
-    }
-
-    // Getting mediaType from forum name
-    const forumEl = document.querySelector('div.pageContent ul.p-breadcrumbs');
-    if ( forumEl === null ) {
-        console.error('Failed to find forum element');
-        return null;
-    }
-    
-    // DEBUG
-    // console.log('Found forum breadcrumb as ', forumEl.textContent);
-    
-    // There's a whole bunch of whitespace between crumbs, so this removes all that
-    const forumCrumbs = Array.from(forumEl.childNodes)
-        .filter( c => !!c.textContent && c.textContent.trim().length > 0)
-        .map(c => c.textContent!.trim().toUpperCase());
-    
-    // ditto ^ sort of; this element is a breadcrumb and 
-    // the element with the forum text is the last child
-    const forumText = forumCrumbs.at(-1);
-    if ( !!!forumText ) {
-        console.error(`Failed to extract forum's text content from element ${forumEl.textContent}`);
-        return null;
-    }
-    
-    const { data: mediaType, error, success } = MediaType.safeParse(forumText);
-    if ( !success ) {
-        console.error(`Extracted forum text ${forumText} failed MediaType model:\n${error.message}`);
-        return null;
-    }
-    
-    return {
-        mediaId,
-        title,
-        mediaType,
-        threadLink: document.URL,
-    };
-}   
 
 
 async function handleDownloadLinkClicked(media: Media) : Promise<void> {
@@ -136,7 +62,7 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
 async function main(): Promise<void> {
     
     // First check if the media on this page is already a known download
-    const media = getPageMedia();
+    const media = getThreadMedia(document);
     if ( media === null ) {
         // TODO popup?
         console.error('Failed to get page media');

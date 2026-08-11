@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePromiseModal } from "@prezly/react-promise-modal";
 
-import type { ConflictResolutionPolicy, ImportResults } from "types/data";
+import { LocalStorage, MediaDownload, type ConflictResolutionPolicy, type ImportResults } from "types/data";
 
 import { 
     ClearKnownDownloadsMessage, GetConflictPolicyMessage, ImportStatusMessage, Message, 
@@ -9,11 +9,16 @@ import {
     type ImportDownloadsMessage 
 } from "types/message";
 
-import { EXE_FILENAME_REGEX } from "utils/const";
-import { scrapeSearchResults } from "utils/func";
+import { EXE_FILENAME_REGEX, LOCAL_STORAGE_KEYS, THREAD_LINK_MEDIA_ID_REGEX, THREAD_URL_REGEX, THREAD_URL_TITLE_REGEX } from "utils/const";
+import { getCurrentTab, getUserDownloads, scrapeSearchResults } from "utils/func";
 import ConflictResolutionDialogue from "../ConflictPolicyDialogue/ConflictPolicyDialogue";
-import { Button, ButtonGroup, ProgressBar, Spinner } from "react-bootstrap";
+import { Button, ButtonGroup, Col, Image, ProgressBar, Row, Spinner } from "react-bootstrap";
 import ImportResultsDisplay from "components/ImportResultsDisplay/ImportResultsDisplay";
+import { waitFor } from "utils";
+
+import checkIcon from "../../../public/icons/check.png";
+import xIcon from "../../../public/icons/remove.png";
+import styles from "./DownloadManager.module.css";
 
 
 // Directory picker options
@@ -24,21 +29,15 @@ const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
 
 
 /**
- * TODO
- * 
- *  1) Show import results in temp popup
- *      a) Num scanned, failed items, etc.
- *      b) Collapsable button revealing scrollable list of which items failed
- *      (and what search query was used for them?)
+ * Handles download-related features of the popup
+ * like importing and deleting.
  */
-export function DownloadManager(args: {
-    isBusy?:             boolean,
-    // setIsBusy:          (x: boolean) => void,
-}) {
-    
+export function DownloadManager(args: { isBusy?: boolean }) {
     const [isBusy, setIsBusy] = useState(!!args.isBusy);
     const [importStatus, setImportStatus] = useState<ImportStatusMessage['payload']>()
-    
+    const [isThreadPage, setIsThreadPage] = useState(false);
+    const [pageDownload, setPageDownload] = useState<MediaDownload|null>(null);
+
     // Invokes modal that gets conflict policy
     const collectConflictPolicy = usePromiseModal<
         ConflictResolutionPolicy, 
@@ -70,6 +69,8 @@ export function DownloadManager(args: {
      * Listens to messages (mostly) from the background script
      */
     useEffect(() => {
+
+        // Listens to runtime events from the background
         const handleListeners = async (
             message: any, 
             sender: chrome.runtime.MessageSender,
@@ -132,12 +133,16 @@ export function DownloadManager(args: {
                     }
                     
                     // console.log('Invoking modal promise');
+                    setImportStatus(undefined);
+
+                    // Pause for pizazz
+                    await waitFor(100);
                     
                     try {
                         const policy = await collectConflictPolicy.invoke({ conflicts: payload });
                         sendResponse(policy);
                         
-                    } catch (error) {
+                    } catch (error) {``
                         console.error(`Error getting conflict policy: ${error}`);
                         sendResponse(null);
                     }
@@ -181,16 +186,83 @@ export function DownloadManager(args: {
             }
         };
         
+        // TODO should update pageDownload
+        // when download storage changes
+        const storageListener = async ( changes: { [key: string]: chrome.storage.StorageChange } ) => {
+            if ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
+                const { newValue } = changes[LOCAL_STORAGE_KEYS.DOWNLOADS];
+                
+                const { data: downloads, error, success } = 
+                    LocalStorage.shape.downloads.safeParse(newValue);
+
+                if ( !success ) {
+                    console.error(`Broken downloads received in DownloadManager storageListener:\n${error.message}\n${JSON.stringify(changes, null, 2)}`);
+                    return;
+                }
+
+                console.log(JSON.stringify(newValue, null, 2));
+                
+                await checkThreadPage(downloads);
+            }
+        };
+        
         // Adding listener when this component mounts
         chrome.runtime.onMessage.addListener(handleListeners);
+        chrome.storage.local.onChanged.addListener(storageListener)
+        
+        // Triggers first page check
+        checkThreadPage().catch(err => console.error(`Error during initial load of page media: ${err}`));
         
         // Removes listener when unmounting
         return () => {
             chrome.runtime.onMessage.removeListener(handleListeners);
+            chrome.storage.local.onChanged.removeListener(storageListener)
         }
     }, []);
     
 
+    /**
+     * Checks if current tab is a thread page and
+     * updates display if it is
+     */
+    async function checkThreadPage(userDownloads?: LocalStorage['downloads']): Promise<void> {
+        console.log('Re-checking current tab');
+        
+        const tab = await getCurrentTab();
+
+        if ( !(!!tab && !!tab.url) ) {
+            console.error('Failed to get Tab.url; may be due to lack of \'tabs\' permissions');
+            return;
+        }
+        
+        // Checking if tab has valid thread page URL
+        if ( !THREAD_URL_REGEX.test(tab.url) ) {
+            console.error(`${tab.url} did not match thread URL regex`);
+            return;
+        }
+
+        // Tab is a thread page, so we check
+        // if this media is downloaded
+        const mediaId = THREAD_LINK_MEDIA_ID_REGEX.exec(tab.url)?.at(0);
+        if ( mediaId === undefined ) {
+            console.error(`Failed to get mediaId from ${tab.url}`);
+            setIsThreadPage(false);
+            setPageDownload(null);
+            return;
+        }
+        
+        setIsThreadPage(true)
+
+        // Getting download to update content
+        const downloads = (!!userDownloads) 
+            ? userDownloads
+            : await getUserDownloads();
+        
+        const d = downloads[+mediaId];
+        setPageDownload((!!d) ? d : null);
+    }
+    
+    
     /**
      * Begins download import
      */
@@ -279,7 +351,67 @@ export function DownloadManager(args: {
 
         setIsBusy(false);
     }
+
+    /**
+     * Handles when the user toggles the download status of a thread's Media.
+     */
+    async function handleDownloadToggle(): Promise<void> {
+        const downloads = await getUserDownloads();
+        
+        if ( pageDownload === null ) {
+            console.log('Creating download');
+            
+            // let media: Media | null | undefined;
+            const tab = await getCurrentTab();
+            
+            // Creating a download from the name 
+            // and ID contained in every thread page's URL
+            let download: MediaDownload;
+            try {
+                // tab.url requires 'tabs' permission in 
+                // manifest to not be undefined
+                const url = tab.url;
+                if ( url === undefined ) {
+                    console.error('Undefined tab url; potentially due to missing \'tabs\' permission in manifest');
+                    return;
+                }
+                
+                const mediaId = Number(THREAD_LINK_MEDIA_ID_REGEX.exec(url)?.at(0));
+                const name = THREAD_URL_TITLE_REGEX.exec(url)?.at(0);
+                if ( isNaN(mediaId) || name === undefined ) {
+                    console.error(`Failed to find mediaId and/or name from url ${url}`);
+                    return;
+                }
+                
+                download = {
+                    mediaId, name,
+                    certainty: 1.0,
+                    deleted: false,
+                }
+                
+            } catch (error) {
+                console.error(`Error creating download: ${error}`);
+                return;
+            }
+            
+            // DEBUG
+            console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
+            
+            setPageDownload(download);
+            downloads[download.mediaId] = download;
     
+        } else {
+            console.log('Deleting download');            
+            delete downloads[pageDownload.mediaId];
+            setPageDownload(null);
+        }
+
+        // Updating storage
+        await chrome.storage.local.set({
+            [LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads
+        });
+    }  
+
 
     // Popup only contains a dialogue's modal if its active
     const activeDialogue = [collectConflictPolicy, showImportResults]
@@ -290,15 +422,16 @@ export function DownloadManager(args: {
     
     // Showing progress bar for import status
     if ( !!importStatus ) {
-        const ratio = Math.round((importStatus.processed / importStatus.total) * 100);
-        console.log('Progress ratio: ', ratio);
+        // const ratio = Math.round((importStatus.processed / importStatus.total) * 100);
+        // console.log('Progress ratio: ', ratio);
 
         content = (
             <div className="vw-100 p-4">
                 <ProgressBar 
                     striped animated visuallyHidden
                     variant="info"
-                    now={ratio} max={importStatus.total}
+                    now={importStatus.processed} 
+                    max={importStatus.total}
                     />
             </div>
         );
@@ -309,24 +442,50 @@ export function DownloadManager(args: {
     
     // Standard content for deleting and importing    
     } else {
-        content = (<>
-            <ButtonGroup size="sm">
-                <Button id="import-button" onClick={handleImportDownloads} type="submit">
-                    Import Downloads
-                </Button>
-                <Button id="delete-downloads" onClick={handleDeleteDownloads} type="reset">
-                    Delete Downloads
-                </Button>
-            </ButtonGroup>
-        </>);
+        content = (
+            <div className="container p-0">
+                {isThreadPage
+                    ? <Row className="p-1">
+                        <Button
+                            className={`container ${styles.pageDownloadToggle}`} 
+                            onClick={handleDownloadToggle}>
+                            
+                            <Row className="h-100">
+                                <div className="col-2 d-flex align-items-center">
+                                    <Image fluid src={(!!pageDownload) ? checkIcon : xIcon}/>
+                                </div>
+                                
+                                <div className="col d-flex align-items-center">
+                                    This thread's media is downloaded?
+                                </div>
+                            </Row>
+
+                        </Button>
+                    </Row>
+
+                    : null}
+                
+                <Row className="p-1">
+                    <ButtonGroup size="sm">
+                        <Button id="import-button" onClick={handleImportDownloads} type="submit">
+                            Import Downloads
+                        </Button>
+                        <Button id="delete-downloads" onClick={handleDeleteDownloads} type="reset">
+                            Delete Downloads
+                        </Button>
+                    </ButtonGroup>
+                </Row>
+
+            </div>
+        );
     }
     
     return (
         <div 
-            className='d-flex align-items-center justify-content-center'
-            style={{ height: ( !!activeDialogue ) ? '350px' : '100px' }}>
+            className='container d-flex align-items-center justify-content-center'
+            style={{ height: ( !!activeDialogue ) ? '350px' : 'auto' }}>
 
-            <div className="container d-flex align-items-center justify-content-center">
+            <div className="container d-flex align-items-center justify-content-center overflow-hidden p-3">
                 {content}
             </div>
             

@@ -190,13 +190,24 @@ export const VOLUME_REGEX =
 	/(?:vol(?:u(?:m(?:e)?)?)?)(\.)?(?:\D)?\d+(?:\D)?\d+/i;
 
 /**
+ * Matches thread page URLs
+ */
+export const THREAD_URL_REGEX = /^https:\/\/f95zone.to\/threads\//i;
+
+/**
+ * Matches just the name part of a thread link's URL
+ */
+export const THREAD_URL_TITLE_REGEX = 
+	new RegExp(`(?<=${THREAD_URL_REGEX.source})[^.]+(?=\.)`, 'i');
+	
+/**
  * Matches mediaId contained within a thread page's URL.
  * FIXME? idky but for some reason the global tag really messes this up
  * when scraping search results. It's fine without it since there should only be
  * 1 match anyway but :/.
  */
-// export const THREAD_LINK_MEDIA_ID_REGEX = /(?<=\.)\d+(?=\/?$)/;  // OLD 
-export const THREAD_LINK_MEDIA_ID_REGEX = /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
+export const THREAD_LINK_MEDIA_ID_REGEX = 
+	/(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
 
 /**
  * Matches anything inside brackets (including brackets)
@@ -255,7 +266,8 @@ export const HEX_COLOR_REGEX = /(?<!.)#(?:[0-9a-f]{6})(?!.)/i;
  */
 export const RGB_REGEX = /(?<!.)rgb\(([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?[0-2]?(?:[0-4]?[0-9]|5[0-5])\)(?!.)/i;
 
-// Don't worry about this
+// Huge list of RegExps which filter out blacklisted
+// tokens when matching imported downloads to thread titles.
 const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
 	/collection|m?tl|f95(?:zone|cracked)?|pc|patreon|steam(?:dlc)?|uncensored|dlc|cracked/gi,
 	/copy|win(?:dows)?|linux|win(?:\d{2})?|demo|final|public|release|update|build/gi,
