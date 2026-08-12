@@ -2,3 +2,8 @@
     --bg-primary: rgb(40 40 40);
     --bg-secondary: rgb(122 32 32);
 }
+
+.bg-main {
+    background-color: var(--bg-primary);
+    color: white;
+}

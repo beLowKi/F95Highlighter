@@ -27,30 +27,7 @@ export function MainPopup() {
     const [isBusy, setIsBusy] = useState(false);
     const [settings, setSettings] = useState<Settings>();
     
-    // Invokes modal that gets confirmation on saving a new download
-    // const confirmNewDownload = usePromiseModal<boolean, { download: MediaDownload }>(
-    //     ({ show, onSubmit, onDismiss, download }) => (
-    //         <NewDownloadConfirm 
-    //             show={show}
-    //             onDismiss={onDismiss}
-    //             onSubmit={onSubmit}
-    //             download={download}
-    //         />
-    // ));
-    
-    // // Invokes modal that gets confirmation on updating a download
-    // const confirmDownloadUpdate = usePromiseModal<boolean, { old: MediaDownload, new: MediaDownload }>(
-    //     ({ show, onSubmit, onDismiss, old, new: newDownload }) => (
-    //         <UpdateDownloadConfirm 
-    //             show={show}
-    //             onDismiss={onDismiss}
-    //             onSubmit={onSubmit}
-    //             old={old} 
-    //             new={newDownload}                
-    //         />
-    // ));
-    
-    
+
     // Updates in-memory settings
     async function refreshSettings(): Promise<void> {
         try {

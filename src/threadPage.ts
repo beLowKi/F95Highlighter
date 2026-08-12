@@ -24,9 +24,9 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     const existingDownload = downloads[+media.mediaId];
     const newDownload: MediaDownload = {
         name: media.title,
-        mediaId: media.mediaId,
         certainty: 1.0,
-        deleted: false
+        deleted: false,
+        media,
     };
 
     // DEBUG

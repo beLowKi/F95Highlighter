@@ -6,6 +6,7 @@ import { Message, SaveDownloadPopupMessage, UpdateDownloadPopupMessage } from "t
 import styles from "./ThreadPopup.module.css";
 import rightArrow from "../../public/icons/right-chevron.png";
 import { truncateStr } from "utils/func";
+import MediaDownloadDisplay from "components/MediaDownloadDisplay/MediaDownloadDisplay";
 
 
 function ThreadDialogue(args: { 
@@ -80,24 +81,6 @@ function SaveNewDownload(args: {
 }
 
 
-function MediaDownloadDisplay(args: { download: MediaDownload, maxNameLength: number }) {
-    const { download, maxNameLength } = args;
-    const displayName = truncateStr(download.name, maxNameLength);
-
-    return (
-        <div className="container">
-            <Row className="d-flex align-items-center justify-content-center p-1">
-                <p>{displayName}</p>
-            </Row>
-
-            <Row className="d-flex align-items-center justify-content-center p-1">
-                <p>{(download.certainty * 100).toFixed(2)}%</p>
-            </Row>
-        </div>
-    );
-}
-
-
 function UpdateDownload(args: {
     old: MediaDownload,
     new: MediaDownload,
@@ -112,11 +95,8 @@ function UpdateDownload(args: {
     const content = (
         <div className="d-flex h-100 align-items-center justify-content-center">
             <div className="d-flex text-center text-break align-items-center">
-                <div 
-                    className={`d-inline-block h-100 align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
-                    
-                    <MediaDownloadDisplay download={old} maxNameLength={maxNameLength}/>
-
+                <div className={`d-inline-block h-100 align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
+                    <MediaDownloadDisplay download={old} maxNameLength={maxNameLength} height={'100%'}/>
                 </div>
                 
                 <div 
@@ -131,9 +111,7 @@ function UpdateDownload(args: {
                 </div>
 
                 <div className={`d-inline-block align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
-
-                    <MediaDownloadDisplay download={newDownload} maxNameLength={maxNameLength}/>
-
+                    <MediaDownloadDisplay download={newDownload} maxNameLength={maxNameLength}height={'100%'}/>
                 </div>
             </div>
         </div>

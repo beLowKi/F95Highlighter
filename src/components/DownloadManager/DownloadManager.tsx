@@ -12,7 +12,7 @@ import {
 import { EXE_FILENAME_REGEX, LOCAL_STORAGE_KEYS, THREAD_LINK_MEDIA_ID_REGEX, THREAD_URL_REGEX, THREAD_URL_TITLE_REGEX } from "utils/const";
 import { getCurrentTab, getUserDownloads, scrapeSearchResults } from "utils/func";
 import ConflictResolutionDialogue from "../ConflictPolicyDialogue/ConflictPolicyDialogue";
-import { Button, ButtonGroup, Col, Image, ProgressBar, Row, Spinner } from "react-bootstrap";
+import { Button, ButtonGroup, Image, ProgressBar, Row, Spinner } from "react-bootstrap";
 import ImportResultsDisplay from "components/ImportResultsDisplay/ImportResultsDisplay";
 import { waitFor } from "utils";
 
@@ -21,11 +21,23 @@ import xIcon from "../../../public/icons/remove.png";
 import styles from "./DownloadManager.module.css";
 
 
-// Directory picker options
+/**
+ * Directory picker options
+ */
 const DIR_SELECT_OPTIONS: DirectoryPickerOptions  = {
     id: 'import-downloads',
     mode: "read",
 } as const;
+
+/**
+ * Heights that the component resizes to  
+ * when certain dialogues are visibla
+ */
+const DIALOGUE_HEIGHTS = {
+    CONFLICT_POLICY: '300px',
+    IMPORT_RESULTS: '450px'
+} as const;
+
 
 
 /**
@@ -60,8 +72,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             show={show} 
             onSubmit={onSubmit} 
             onDismiss={onDismiss} 
-            results={results}
-            />
+            results={results}/>
     ));
     
 
@@ -339,7 +350,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
      * TMP tells background to clear downloads
      */
     async function handleDeleteDownloads(): Promise<void> {
-        setIsBusy(true);
+        // setIsBusy(true);
         
         const message: ClearKnownDownloadsMessage = {
             action: 'clear-known-downloads',
@@ -349,7 +360,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         const res = await chrome.runtime.sendMessage(JSON.stringify(message));
         // TODO handle response if there is one
 
-        setIsBusy(false);
+        // setIsBusy(false);
     }
 
     /**
@@ -377,14 +388,19 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                 }
                 
                 const mediaId = Number(THREAD_LINK_MEDIA_ID_REGEX.exec(url)?.at(0));
-                const name = THREAD_URL_TITLE_REGEX.exec(url)?.at(0);
-                if ( isNaN(mediaId) || name === undefined ) {
+                const title = THREAD_URL_TITLE_REGEX.exec(url)?.at(0);
+                if ( isNaN(mediaId) || title === undefined ) {
                     console.error(`Failed to find mediaId and/or name from url ${url}`);
                     return;
                 }
                 
                 download = {
-                    mediaId, name,
+                    name: 'n/a',
+                    media: {
+                        mediaId, 
+                        title,
+                        threadLink: url
+                    },
                     certainty: 1.0,
                     deleted: false,
                 }
@@ -398,11 +414,11 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
             
             setPageDownload(download);
-            downloads[download.mediaId] = download;
+            downloads[download.media.mediaId] = download;
     
         } else {
             console.log('Deleting download');            
-            delete downloads[pageDownload.mediaId];
+            delete downloads[pageDownload.media.mediaId];
             setPageDownload(null);
         }
 
@@ -480,12 +496,28 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         );
     }
     
-    return (
-        <div 
-            className='container d-flex align-items-center justify-content-center'
-            style={{ height: ( !!activeDialogue ) ? '350px' : 'auto' }}>
+    // As far as I can tell, there's no simple way to have this component
+    // scale to a Modal dialogue's size. This is the easy way of
+    // making the popup larger when big dialogues are visible
+    let height: string;
 
-            <div className="container d-flex align-items-center justify-content-center overflow-hidden p-3">
+    switch ( activeDialogue ) {
+        case collectConflictPolicy:
+            height = DIALOGUE_HEIGHTS.CONFLICT_POLICY;
+            break;
+    
+        case showImportResults:
+            height = height = DIALOGUE_HEIGHTS.IMPORT_RESULTS;
+            break;
+            
+        default:
+            height = 'auto';
+    }
+    
+    return (
+        <div className={`container ${styles.main}`} style={{ height }}>
+
+            <div className="d-flex h-100 align-items-center justify-content-center overflow-hidden p-3">
                 {content}
             </div>
             

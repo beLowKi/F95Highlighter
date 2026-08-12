@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import {
 	ConflictResolutionPolicy,
+	ImportResults,
 	LocalStorage,
 	type Media,
 	MediaDownload,
@@ -188,10 +189,10 @@ async function getMediaDownload(name: string): Promise<MediaDownload | null> {
 	}
 
 	// console.log(JSON.stringify(result, null, 2));
-
+	
 	return {
 		name,
-		mediaId: result.media.mediaId,
+		media: result.media,
 		certainty: result.certainty,
 		deleted: false,
 	};
@@ -208,19 +209,18 @@ async function importDownloads(items: string[]): Promise<void> {
 	// Prompting login if needed so that the search feature is available.
 	// Failing both, the import is cancelled.
 	if ( !((await userLoggedIn()) || (await promptLogin())) ) {
-
+		throw new Error('User not logged in and login prompt failed');
 	}
 	
 	// NOTE this throws an Error if downloads store gets broken (fails LocalStorage model)
 	// for some reason, but this function should fail when that happens anyway
 	const downloads = await getUserDownloads();
-	
 	// console.log(`Downloads pre-import:\n${JSON.stringify(downloads, null, 2)}`);
-		
+	
 	// Collecting new downloads
-	const newMediaIds = new Set<number>();
+	const newMedia: NonNullable<ImportResults['newMedia']> = {};	
+	const failedItems: NonNullable<ImportResults['failedItems']> = [];
 	const conflicts: Record<number, MediaDownloadConflict> = {};
-	const failedItems = new Set<string>();
 	
 	// Number of downloads processed;
 	// used for heartbeat message to popup
@@ -281,15 +281,15 @@ async function importDownloads(items: string[]): Promise<void> {
 
 			// Updating failed items
 			if (download === null) {
-				failedItems.add(items.at(index)!);
+				failedItems.push(items.at(index)!);
 				continue;
 			};
 
-			const mediaId = download.mediaId;
+			const mediaId = download.media.mediaId;
 
 			// New media
 			if ( !( mediaId in downloads ) ) {
-				newMediaIds.add(mediaId);
+				newMedia[download.name] = mediaId;
 				downloads[mediaId] = download;
 				continue;
 			}
@@ -298,7 +298,8 @@ async function importDownloads(items: string[]): Promise<void> {
 			if ( !( mediaId in conflicts ) ) {
 				conflicts[mediaId] = {
 					mediaId,
-					new: [download]
+					existing: downloads[mediaId],
+					new: [download],
 				};
 				
 				continue;
@@ -354,7 +355,7 @@ async function importDownloads(items: string[]): Promise<void> {
 
 	// Handling conflicts
 	// Tracks which media downloads have been updated
-	const updatedMediaIds = new Set<number>();
+	const updatedMedia: NonNullable<ImportResults['updatedMedia']> = {};
 
 	switch (conflictPolicy) {
 		// Keeps the latest download, so whichever
@@ -383,27 +384,34 @@ async function importDownloads(items: string[]): Promise<void> {
 		case "KEEP_MOST_CERTAIN":
 			for ( const [mediaId, conflict] of Object.entries(conflicts) ) {
 				const options: MediaDownload[] = 
-					[conflict.existing, ...conflict.new].filter(d => !!d);
-
-				const choice = options.reduce(
-					(prev, curr) => (curr.certainty > prev.certainty) ? curr : prev
-				);
+					[conflict.existing, ...conflict.new].filter(d => ( d !== undefined ));
 
 				// Invalid conflict created with
 				// no existing or new downloads
-				if ( choice === undefined ) {
+				if ( options.length <= 1 ) {
 					console.error(
 						`Conflict on Media ID ${mediaId} with no new or existing downloads:` +
 						`\n${JSON.stringify(conflict, null, 2)}`
 					);
 					continue;
 				}
+					
+				const choice = options.reduce(
+					(prev, curr) => (curr.certainty > prev.certainty) ? curr : prev
+				);
+
+				// console.log(`Selected ${JSON.stringify(choice, null, 2)} out of ${JSON.stringify(options, null, 2)}`);
 				
+				const numberedId = +mediaId;
 				if ( choice !== conflict.existing ) {
-					updatedMediaIds.add(Number(mediaId));
+					updatedMedia[numberedId] = {
+						old: downloads[numberedId],
+						new: choice,
+					};
+					// updatedMediaIds.add(Number(mediaId));
 				}
 				
-				downloads[Number(mediaId)] = choice;
+				downloads[numberedId] = choice;
 			}
 			break;
 
@@ -413,23 +421,27 @@ async function importDownloads(items: string[]): Promise<void> {
 				const options: MediaDownload[] = 
 					[conflict.existing, ...conflict.new].filter(d => !!d);
 				
-				const choice = options.at(-1);
-				
 				// Invalid conflict created with
 				// no existing or new downloads
-				if ( choice === undefined ) {
+				if ( options.length <= 1 ) {
 					console.error(
 						`Conflict on Media ID ${mediaId} with no new or existing downloads:` +
 						`\n${JSON.stringify(conflict, null, 2)}`
 					);
 					continue;
 				}
-
+					
+				const choice = options.at(-1)!;
+				const numberedId = +mediaId;
+				
 				if ( choice !== conflict.existing ) {
-					updatedMediaIds.add(Number(mediaId));
+					updatedMedia[numberedId] = {
+						old: downloads[numberedId],
+						new: choice
+					}
 				}
 
-				downloads[Number(mediaId)] = choice;
+				downloads[numberedId] = choice;
 			}
 			break;
 
@@ -456,21 +468,14 @@ async function importDownloads(items: string[]): Promise<void> {
 		importResultsMessage.payload = {
 			success: 			true,
 			numScanned: 		items.length,
-			newMediaIds: 		Array.from(newMediaIds),
-			updatedMediaIds: 	Array.from(updatedMediaIds),
+			newMedia,
+			updatedMedia,
 			failedItems: 		Array.from(failedItems)
 		}
 		
 	} catch (error) {
 		console.error(`Error saving imports: ${error}`);
 	}
-
-	// DEBUG
-	// console.log(`import results in background:\n${JSON.stringify(
-	// 	importResultsMessage.payload, 
-	// 	null, 
-	// 	2
-	// )}`);
 
 	// Triggers popup display for import results
 	await chrome.runtime.sendMessage(JSON.stringify(importResultsMessage));
@@ -546,7 +551,7 @@ async function saveDownloadPrompt(download: SaveDownloadMessage['payload']): Pro
 		const res = await chrome.runtime.sendMessage(JSON.stringify(msg));
 		if ( !!res ) {
 			// console.log(`Received truthy response ${res}; saving download:\n${JSON.stringify(download)}`);
-			await saveDownloads({ [download.mediaId]: download });
+			await saveDownloads({ [download.media.mediaId]: download });
 			
 		// DEBUG
 		} else {
@@ -587,7 +592,7 @@ async function updateDownloadPrompt(payload: UpdateDownloadMessage['payload']): 
 			// 	`\nNew: ${JSON.stringify(payload.new)}`
 			// );
 	
-			await saveDownloads({ [payload.new.mediaId]: payload.new });
+			await saveDownloads({ [payload.new.media.mediaId]: payload.new });
 		
 		// DEBUG
 		} else {

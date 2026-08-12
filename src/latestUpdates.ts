@@ -9,6 +9,7 @@ import { getUserDownloads, getUserSettings } from "utils/func";
 // I'm thinking a toggle in the popup that also prevents
 // it from closing when clicked off of?
 
+
 // Stores the colors used to show different certainties
 let highlights: Settings['highlights'] = {
     uncertainColor:     '',

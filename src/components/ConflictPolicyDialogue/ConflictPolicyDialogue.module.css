@@ -1,11 +1,6 @@
-.main {
-    height: 100%;
-    width: 100%;
-    padding: 10px;
-    overflow: hidden;
-}
+@import url('../../styles.css');
 
-.policyButtonGroup {
-    padding: 10px;
-    row-gap: 5px;
+.main {
+    background-color: var(--bg-primary);
+    color: white;
 }

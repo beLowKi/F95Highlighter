@@ -35,7 +35,8 @@ export function ConflictResolutionDialogue(args: {
             show={args.show} 
             onHide={args.onDismiss}
             size="sm"
-            centered>
+            centered
+            contentClassName={styles.main}>
             
             <Modal.Header closeButton>
                 <Modal.Title className="text-2xl text-center">Replace or Skip Downloads</Modal.Title>

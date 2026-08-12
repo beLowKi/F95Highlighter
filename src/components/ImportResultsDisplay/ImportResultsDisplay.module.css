@@ -1,3 +1,38 @@
+@import url('../../styles.css');
+
 .main {
-    
+    background-color: var(--bg-primary);
+    color: white;
+}
+
+.importResultContainer {
+    --import-results-bg: rgb(from var(--bg-primary) calc(r * 1.5) calc(g * 1.5) calc(b * 1.5));
+    background-color: var(--import-results-bg);
+    padding: 0;
+}
+
+.resultsHeader {
+    min-height: 45px;
+    height: auto;
+    background-color: rgb(from var(--import-results-bg) calc(r * 1.2) calc(g * 1.2) calc(b * 1.2));
+    color: white;
+}
+
+.importResult {
+    height: auto;
+    color: white;
+    overflow: hidden;
+    font-size: 14px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.importResultArrow {
+    width: 70%;
+}
+
+.newMedia {
+}
+
+.updatedMedia {
 }

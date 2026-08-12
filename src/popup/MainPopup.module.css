@@ -3,7 +3,8 @@
 .mainPopup {
     background-color: var(--bg-primary);
     color: white;
-    width: 450px;
+    min-width: 450px;
+    width: auto;
     height: auto;
     padding-left: 0;
     padding-right: 0;

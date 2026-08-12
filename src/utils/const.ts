@@ -151,14 +151,13 @@ export const SEARCH_TOKEN_DELIMIT_REGEX = /[^a-zA-Z0-9 ]/g;
  * https://ihateregex.io/expr/semver/
  */
 export const VERSION_NUMBER_REGEX = 
-	/(v(e(r(s(i(o(n)?)?)?)?)?)?)?(?: |(?:(?<=.)[_-]+|[_-]+(?=.)))?(\d+)\.(\d+)(?:\.\d+(?:\.\d+)?)?/gi;
+	/(v(e(r(s(i(o(n)?)?)?)?)?)?)?(?:[ .]|(?:(?<=.)[_-]+|[_-]+(?=.)))?(\d+)\.(\d+)(?:\.\d+(?:\.\d+)?)?/i;
 
 /**
  * Matches dates formatted year-month-day (dashes optional).
  * Most media downloads I've seen follow this format with their files for some reason.
  */
 export const YEAR_MONTH_DAY_REGEX =
-	// /(?<=[^0-9])(\d{4})(?:[^0-9])?(\d{2})(?:[^0-9])?(\d{2})(?![0-9])/;
 	/(\d{4})\D*(\d{2}(?!\d))?\D*(\d{2}(?!\d))?/g;
 
 /**
@@ -207,7 +206,8 @@ export const THREAD_URL_TITLE_REGEX =
  * 1 match anyway but :/.
  */
 export const THREAD_LINK_MEDIA_ID_REGEX = 
-	/(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
+	/(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:.+)$)/i;
+	// /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
 
 /**
  * Matches anything inside brackets (including brackets)
@@ -271,7 +271,7 @@ export const RGB_REGEX = /(?<!.)rgb\(([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?([0-2]?(?:
 const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
 	/collection|m?tl|f95(?:zone|cracked)?|pc|patreon|steam(?:dlc)?|uncensored|dlc|cracked/gi,
 	/copy|win(?:dows)?|linux|win(?:\d{2})?|demo|final|public|release|update|build/gi,
-	/member(?:\D+)?version|animations?|assorted|compressed/gi,
+	/member(?:\D+)?version|animations?|assorted|compressed|launcher|archives?/gi,
 	new RegExp(`all(?:${SNAKE_SEGMENT_REGEX.source})?in(?:${SNAKE_SEGMENT_REGEX.source})?one`, 'gi'),
 	new RegExp(`(?:not)?(?:${SNAKE_SEGMENT_REGEX.source})?complete`, 'gi'),
 	PART_REGEX,
@@ -279,7 +279,7 @@ const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
 	YEAR_MONTH_DAY_REGEX,
 	MONTH_REGEX,
 	DATE_RANGE_REGEX,
-	/up(?:${SNAKE_SEGMENT_REGEX.source})?to/gi,
+	new RegExp(`up(?: |${SNAKE_SEGMENT_REGEX.source})?to`, 'gi'),
 	new RegExp(`until(?:${SNAKE_SEGMENT_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'gi'),
 	VOLUME_REGEX
 ]);
@@ -295,9 +295,9 @@ const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
  * Something like XX_Collection_up_to_Mar-2020.
  */
 export const DETAIL_SUFFIX_REGEX = new RegExp('(?<=.)' +
-	`(?:(?:${SNAKE_SEGMENT_REGEX.source})?` +
+	`(?:(?: |${SNAKE_SEGMENT_REGEX.source})?` +
 	`(?:${Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source})` +
-	`(?:${SNAKE_SEGMENT_REGEX.source})?)+` +
+	`(?: |${SNAKE_SEGMENT_REGEX.source})?)+` +
 '$', 'gi');
 
 // console.log('Complete regex:', DETAIL_SUFFIX_REGEX.source);

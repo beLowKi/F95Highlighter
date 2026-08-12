@@ -18,7 +18,7 @@ export type MediaType = z.infer<typeof MediaType>;
  * Represents a video game, comic, or animation
  */
 export const Media = z.strictObject({
-	mediaType: MediaType,
+	mediaType: MediaType.optional(),
 	mediaId: z.number(),
 	title: z.string(),
 	threadLink: z.string(),
@@ -32,8 +32,8 @@ export type Media = z.infer<typeof Media>;
  */
 export const MediaDownload = z.strictObject({
 	name: 		z.string(),
-	mediaId: 	z.int(),
-	certainty: 	z.float32(),
+	media:		Media,
+	certainty: 	z.float32(), // TODO refine to only accept within [0.0, 1.0]
 	deleted: 	z.boolean().default(false),
 });
 
@@ -55,7 +55,7 @@ export const MediaDownloadConflict = z
 	.refine(
 		(val) => {
 			const downloads = [val.existing, ...val.new].filter((d) => !!d);
-			return downloads.every((d) => d.mediaId === val.mediaId);
+			return downloads.every((d) => d.media.mediaId === val.mediaId);
 		},
 		{ message: "Missing or mismatch mediaId(s) detected among downloads" },
 	);
@@ -82,9 +82,31 @@ export type SearchResult = z.infer<typeof SearchResult>;
 export const ImportResults = z.strictObject({
 	success:			z.boolean(),
 	numScanned:			z.number().optional(),
-	newMediaIds:		z.array(z.number()).default([]).optional(),
-	updatedMediaIds:	z.array(z.number()).default([]).optional(),
-	failedItems:		z.array(z.string()).default([])
+	
+	/**
+	 * Maps each successfully imported item 
+	 * to the mediaId it was matched to 
+	 */
+	newMedia:			z.record(z.string(), z.number()).optional(),
+
+	/**
+	 * Maps each item which led to an update to
+	 * the old and new download of the media it matched
+	 */
+	updatedMedia:		z.record(
+			z.string(), 
+			z.strictObject({
+				old: MediaDownload,
+				new: MediaDownload
+			})
+	).optional(),
+
+	/**
+	 * List of items who failed to match a thread
+	 */
+	failedItems:		z.array(z.string()).optional(),
+	
+	failMessage:		z.string().optional(),
 });
 
 export type ImportResults = z.infer<typeof ImportResults>;
