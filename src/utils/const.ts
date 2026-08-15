@@ -206,8 +206,8 @@ export const THREAD_URL_TITLE_REGEX =
  * 1 match anyway but :/.
  */
 export const THREAD_LINK_MEDIA_ID_REGEX = 
-	/(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:.+)$)/i;
-	// /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
+	/(?:(?<=(?:https:\/\/f95zone.to\/)?threads\/[^.]+\.)\d+|(?<=(?:https:\/\/f95zone.to\/)?threads\/)\d+)(?=\/?(?:.+)$)/i;
+	// /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:.+)$)/i;
 
 /**
  * Matches anything inside brackets (including brackets)

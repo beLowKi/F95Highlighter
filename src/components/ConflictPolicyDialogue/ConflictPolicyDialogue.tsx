@@ -12,9 +12,7 @@ export function ConflictResolutionDialogue(args: {
     conflicts?: GetConflictPolicyMessage['payload']
 }) {
     
-    // TODO 'compare each conflict' option like in Windows
-    
-    console.log('Creating conflict policy dialogue');
+    // console.log('Creating conflict policy dialogue');
     
     const numConflicts = ( args.conflicts !== undefined )
         ? Object.keys(args.conflicts).length

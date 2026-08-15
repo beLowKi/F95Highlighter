@@ -10,7 +10,9 @@ import {
 	Settings,
 } from "types/data";
 import { 
+	AddDownloadsMessage,
 	ClearKnownDownloadsMessage, ImportDownloadsMessage, ImportStatusMessage, Message, 
+	RemoveDownloadsMessage, 
 	SaveDownloadMessage, 
 	SaveDownloadPopupMessage, 
 	UpdateDownloadMessage, 
@@ -46,158 +48,6 @@ import {
 // Constants only used in this script that 
 // I don't know where else to put...
 const IMPORT_STATUS_UPDATE_RATE = 250;
-
-
-// /**
-//  * Searches for the given name in F95
-//  * to find a best match for the actual Media.
-//  */
-// async function searchMediaName(
-// 	name: string,
-// ): Promise<{ media: Media; certainty: number } | null> {
-// 	// Prompting login if needed so that the search feature is available
-// 	if (!(await userLoggedIn())) {
-// 		const success = await promptLogin();
-// 		if (!success) {
-// 			console.error("Failed to login to f95zone; triggering popup");
-
-// 			// Opens popup if it isn't already active
-// 			if (!isPopupActive()) {
-// 				await chrome.action.openPopup();
-// 			}
-			
-// 			// Messages popup to tell user they aren't logged in when they need to be.
-// 			// The response should be a boolean for 'userLoggedIn'
-// 			const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
-// 			const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
-// 			if ( !!!userLoggedIn ) {
-// 				return null;
-// 			}
-// 		}
-// 	}
-
-// 	// Peforming search
-// 	const query = prepSearchQuery(name);
-// 	const url = `${BASE_SEARCH_URL}?q=${query}&${EX_SEARCH_PARAMS}`;
-// 	console.log(`Performing search query for ${name} at ${url}`);
-
-// 	const res = await fetch(url);
-
-// 	// Request failed
-// 	if (res.status < 200 || res.status > 299) {
-// 		console.error(`Received error response on Media search`);
-// 		return null;
-// 	}
-
-// 	// Reading search results
-// 	const html = await res.text();
-
-// 	const message: ScrapeSearchResultsMessage = {
-// 		action: 'scrape-search-results',
-// 		payload: html,
-// 	};
-
-// 	const searchResults = await chrome.runtime.sendMessage(JSON.stringify(message));
-
-// 	// Validating return
-// 	if (!(searchResults instanceof Array) || searchResults.length <= 0) {
-// 		console.error(`Failed to find search results for ${name}`);
-// 		return null;
-// 	}
-
-// 	try {
-// 		searchResults.forEach((sr) => SearchResult.parse(sr));
-// 	} catch (error) {
-// 		console.error(
-// 			`Error validating search results: ${JSON.stringify(searchResults, null, 2)}`,
-// 		);
-// 		return null;
-// 	}
-
-// 	// Finding best match among results
-// 	// console.log(
-// 	// 	`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
-// 	// );
-
-// 	const sampleSize = ( await getUserSettings() ).searchSampleSize;
-// 	const sample = searchResults.slice(0, sampleSize);
-
-// 	// Finding the search result whose title
-// 	// is the most similar to 'name'
-// 	let bestGuess: SearchResult | undefined;
-// 	let bestGuessCertainty = 0.0;
-
-// 	for (const result of sample) {
-		
-// 		// Preparing title for keyword scoring
-// 		// by removing delimiting characters like (), [], & /
-// 		// and putting spaces between snake and camel-case splits.
-// 		// This makes the tokens extracted from the title easier to
-// 		// match with 'query'
-// 		const re = [
-// 			UPPER_CASE_SPLIT_REGEX,
-// 			SNAKE_SEGMENT_REGEX
-// 		].reduce((p, c) => concatRegex(p, c, '|'));
-
-// 		const prepped = result.title
-// 			.replaceAll(SEARCH_TOKEN_DELIMIT_REGEX, '')
-// 			.replaceAll(re, ' ');
-		
-// 		const certainty = keywordScore(
-// 			query.split('+'), 
-// 			prepped
-// 		);
-
-// 		if ( bestGuess === undefined || bestGuessCertainty < certainty ) {
-// 			bestGuess = result;
-// 			bestGuessCertainty = certainty;
-// 		}
-// 	}
-	
-// 	if (!!!bestGuess) {
-// 		console.error(
-// 			"Something went horribly wrong; bestGuess is not defined when it should be",
-// 		);
-// 		return null;
-// 	}
-
-// 	const media: Media = {
-// 		mediaType: bestGuess.forum,
-// 		mediaId: bestGuess.mediaId,
-// 		title: bestGuess.title,
-// 		threadLink: bestGuess.threadLink,
-// 	};
-
-// 	return { media, certainty: bestGuessCertainty };
-// }
-
-
-// /**
-//  * Attempts to create a MediaDownload from the given directory item name.
-//  * Return also includes whether a download for this Media already exists.
-//  *
-//  * **NOTE** Currently, each call does a full scan of Media titles
-//  * to find which ones 'name' matches most with.
-//  */
-// async function getMediaDownload(name: string): Promise<MediaDownload | null> {
-// 	// console.log(`Searching for media matching ${name}`);
-	
-// 	// Attempting to find matching Media
-// 	const result = await searchMediaName(name);
-// 	if (result === null) {
-// 		console.error("Failed to find media");
-// 		return null;
-// 	}
-
-// 	// console.log(JSON.stringify(result, null, 2));
-	
-// 	return {
-// 		name,
-// 		media: result.media,
-// 		certainty: result.certainty,
-// 		deleted: false,
-// 	};
-// }
 
 
 /**
@@ -247,7 +97,7 @@ async function importDownloads(items: string[]): Promise<void> {
 	// FIXME large imports send wrong total?
 	const loop = async () => {
 		if ( processedDownloads >= queue.length ) {
-			console.log(`Processed ${processedDownloads} out of ${queue.length}; stopping heartbeat`);
+			// console.log(`Processed ${processedDownloads} out of ${queue.length}; stopping heartbeat`);
 			clearTimeout(queuedUpdate);
 			return;
 		}
@@ -331,7 +181,7 @@ async function importDownloads(items: string[]): Promise<void> {
 		// User cancelled or otherwise failed to get 
 		// conflict policy so we cancel import
 		if ( !(!!policy) ) {
-			console.log('Background received null | undefined conflict policy');
+			// console.log('Background received null | undefined conflict policy');
 			return;
 		}
 		
@@ -495,6 +345,19 @@ async function saveDownloads(newDownloads: LocalStorage['downloads']): Promise<v
 	}
 	
 	// console.log(`New downloads: ${JSON.stringify(newDownloads, null, 2)}`);
+	// console.log(`Updated downloads: ${JSON.stringify(downloads, null, 2)}`);
+
+	await chrome.storage.local.set({
+		[LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads,
+	});
+}
+
+
+async function deleteDownloads(deletingIds: number[]): Promise<void> {
+	const downloads = await getUserDownloads();
+	deletingIds.forEach(k => delete downloads[k]);
+
+	// console.log(`Deleting IDs: ${JSON.stringify(deletingIds)}`)
 	// console.log(`Updated downloads: ${JSON.stringify(downloads, null, 2)}`);
 
 	await chrome.storage.local.set({
@@ -688,6 +551,42 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 
 			return true;
 		
+		// Explicitly adding new download(s)
+		case AddDownloadsMessage.shape.action.value: {
+			const { data: downloads, error, success } = 
+				await AddDownloadsMessage.shape.payload.safeParseAsync(payload)
+			
+			if ( !success ) {
+				console.error(
+					`Background received invalid payload for action: ${action}\n` +
+					JSON.stringify(payload, null, 2) 
+				);
+				return false;
+			}
+			
+			await saveDownloads(downloads);
+			
+			break;
+		}
+
+		// Explicitly removing download(s)
+		case RemoveDownloadsMessage.shape.action.value: {
+			const { data: ids, error, success } = 
+				await RemoveDownloadsMessage.shape.payload.safeParseAsync(payload)
+			
+			if ( !success ) {
+				console.error(
+					`Background received invalid payload for action: ${action}\n` +
+					JSON.stringify(payload, null, 2) 
+				);
+				return false;
+			}
+			
+			await deleteDownloads(ids);
+			
+			break;
+		}
+			
 		// TMP Clearing downloads
 		case ClearKnownDownloadsMessage.shape.action.value:
 			try {

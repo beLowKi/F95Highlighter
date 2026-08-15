@@ -30,7 +30,7 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     };
 
     // DEBUG
-    console.log(`Existing download: ${JSON.stringify(existingDownload, null, 2)}`);  
+    // console.log(`Existing download: ${JSON.stringify(existingDownload, null, 2)}`);  
     
     let msg: UpdateDownloadMessage | SaveDownloadMessage;
     

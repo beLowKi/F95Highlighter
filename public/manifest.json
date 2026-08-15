@@ -30,7 +30,8 @@
   "content_scripts": [
     {
       "matches": ["https://f95zone.to/sam/latest_alpha/*"],
-      "js": ["latestUpdates.js"]
+      "js": ["latestUpdates.js"],
+      "css": ["latestUpdates.css"]
     }, {
       "matches": ["https://f95zone.to/threads/*"],
       "js": ["threadPage.js"]

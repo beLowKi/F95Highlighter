@@ -1,4 +1,4 @@
-@import url('../styles.css');
+@import url('../styles.module.css');
 
 .mainPopup {
     background-color: var(--bg-primary);

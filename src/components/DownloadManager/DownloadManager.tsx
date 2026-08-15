@@ -115,7 +115,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     
                     try {
                         const searchResults = await scrapeSearchResults(html);
-                        console.log(JSON.stringify(searchResults, null, 2));  // DEBUG
+                        // console.log(JSON.stringify(searchResults, null, 2));  // DEBUG
                         
                         sendResponse(searchResults);
                         
@@ -131,7 +131,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                 // **NOTE** response may be undefined if user cancelled without
                 // selecting a policy
                 case GetConflictPolicyMessage.shape.action.value:
-                    console.log('Getting conflict resolution policy');
+                    // console.log('Getting conflict resolution policy');
 
                     const { 
                         error: confErr, 
@@ -189,7 +189,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     }
                     
                     // TODO update progress bar
-                    console.log(`Heartbeat:\n${JSON.stringify(payload, null, 2)}`);
+                    // console.log(`Heartbeat:\n${JSON.stringify(payload, null, 2)}`);
                     setImportStatus(status);
                         
                     break;
@@ -211,7 +211,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     return;
                 }
 
-                console.log(JSON.stringify(newValue, null, 2));
+                // console.log(JSON.stringify(newValue, null, 2));
                 
                 await checkThreadPage(downloads);
             }
@@ -237,7 +237,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
      * updates display if it is
      */
     async function checkThreadPage(userDownloads?: LocalStorage['downloads']): Promise<void> {
-        console.log('Re-checking current tab');
+        // console.log('Re-checking current tab');
         
         const tab = await getCurrentTab();
 
@@ -291,7 +291,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             return;
         }
         
-        console.log(`Selected directory ${directory.name}`);
+        // console.log(`Selected directory ${directory.name}`);
 
         const items = new Set<string>();
 
@@ -349,8 +349,6 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         const downloads = await getUserDownloads();
         
         if ( pageDownload === null ) {
-            console.log('Creating download');
-            
             // let media: Media | null | undefined;
             const tab = await getCurrentTab();
             
@@ -390,13 +388,13 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             }
             
             // DEBUG
-            console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
+            // console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
             
             setPageDownload(download);
             downloads[download.media.mediaId] = download;
     
         } else {
-            console.log('Deleting download');            
+            // console.log('Deleting download');            
             delete downloads[pageDownload.media.mediaId];
             setPageDownload(null);
         }

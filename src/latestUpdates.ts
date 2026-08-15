@@ -1,6 +1,10 @@
-import { LocalStorage, MediaDownload, Settings } from "types/data";
-import { LOCAL_STORAGE_KEYS } from "utils/const";
+import type { AddDownloadsMessage, RemoveDownloadsMessage } from "types/message";
+import { LocalStorage, Media, MediaDownload, MediaType, Settings } from "types/data";
+import { LOCAL_STORAGE_KEYS, THREAD_LINK_MEDIA_ID_REGEX } from "utils/const";
 import { getUserDownloads, getUserSettings } from "utils/func";
+
+import styles from 'latestUpdates.module.css';
+
 
 // console.log("latest updates content script loaded");
 
@@ -23,10 +27,125 @@ let downloads: LocalStorage['downloads'];
 
 
 /**
+ * Returns the mediaType currently being shown
+ */
+function getCurrentMediaType(): MediaType {
+    throw new Error('getCurrentMediaType not implemented');
+}
+
+
+/**
+ * Gets the Media represented by the given Media tile.
+ * Returns null if not a valid media tile.
+ */
+function getTileMedia( tile: HTMLDivElement ): Media | null {
+    // mediaId, title, threadLink, mediaType?
+
+    // There should only be a single child which is an <a>
+    // tag containing the rest of the tile
+    const linkEl = tile.getElementsByTagName('a').item(0);
+    if ( linkEl === null ) {
+        return null;
+    } 
+
+    // This tag's href is its thread's URL without a title.
+    // e.g., https://f95zone.to/threads/123456
+    const threadLink = linkEl.href;
+    const mediaId = THREAD_LINK_MEDIA_ID_REGEX.exec(threadLink)?.at(0);
+    if ( mediaId === undefined ) {
+        return null;
+    }
+
+    const titleEl = tile.querySelector('header div h2');
+    if ( titleEl === null ) {
+        return null;
+    }
+    
+    // TODO
+    // const mediaType = getCurrentMediaType();
+
+    return {
+        mediaId: +mediaId,
+        title: titleEl.textContent,
+        threadLink, 
+        // mediaType
+    }
+}
+
+
+/**
+ * Returns a fully functioal download button 
+ * for either adding or removing.
+ */
+function getDownloadButton( tile: HTMLDivElement, type: 'add' | 'remove' ): HTMLButtonElement {
+    const el = document.createElement('button');
+    el.classList.add(styles.downloadButton);
+    el.textContent = ( type === 'add' ) ? '+' : '-';
+
+    // Adding onclick handler
+    el.addEventListener('click', (event) => {
+        event.stopPropagation();  // prevents parent from receiving click event
+
+        // DEBUG
+        // const titleEl = tile.querySelector('header div h2');
+        // console.log(`Clicked add-download button for ${titleEl?.textContent}`);
+        
+        const media = getTileMedia(tile);
+        if ( media === null ) {
+            console.error(`Failed to create Media from tile`);
+            return;
+        }
+    
+        let msg: AddDownloadsMessage | RemoveDownloadsMessage;
+        
+        // Adding new download
+        if ( type === 'add' ) {
+            msg = {
+                action: 'add-downloads',
+                payload: {
+                    [media.mediaId]: {
+                        media,
+                        name: media.title,
+                        certainty: 1.0,
+                        deleted: false
+                    }
+                }
+            };
+        
+        // Removing a download
+        } else {
+            msg = {
+                action: 'remove-downloads',
+                payload: [media.mediaId]
+            };
+        }
+        
+        chrome.runtime.sendMessage(JSON.stringify(msg));
+    });
+
+    return el;
+}
+
+
+/**
  * Updates a Media tile <div>'s style based on the given download.
  */
 function updateTile(tile: HTMLDivElement, download?: MediaDownload) {
 
+    // Removing existing button
+    const hasBtn = Array.from(tile.children).some(
+        el => el.classList.contains(styles.downloadButton)
+    );
+
+    if ( hasBtn ) {
+        const btn = tile.getElementsByClassName(styles.downloadButton).item(0);
+        btn?.remove();
+    }
+
+    // Adding 'add/remove-download' button
+    const btn = getDownloadButton(tile, (!!!download) ? 'add' : 'remove');
+    tile.appendChild(btn);
+    
     // Resetting inline style
     if ( download === undefined ) {
         tile.style.padding = '0';
@@ -94,15 +213,6 @@ async function updateTiles( itemWrapper: HTMLElement ) {
 
 
 async function main(): Promise<void> {
-    // Parent of the element containing Media tiles
-    // This changes when switching categories (games, comics, animations) or pages
-    // and is used to re-observe the itemWrapper.
-    // const pageWrapper = document.getElementById('latest-page_items-wrap');
-    // if ( pageWrapper === null ) {
-    //     console.error('Failed to find page wrapper');
-    //     return;
-    // }
-    
     // This element is a child of the page 
     // wrapper and contains all the Media tiles
     const itemWrapper = document.getElementById("latest-page_items-wrap_inner");

@@ -1,0 +1,24 @@
+@import url('./styles.module.css');
+
+.downloadButton {
+    background-color: var(--bg-secondary);
+    color: white;
+
+    width: 10%;
+    aspect-ratio: 1;
+    font-size: 20px;
+    text-align: center;
+    overflow: hidden;
+    
+    position: absolute;
+    top: 4%;
+    right: 3%;
+    z-index: 10;
+
+    cursor: pointer;
+}
+
+.downloadButton:hover {
+    background-color: rgb(from var(--bg-secondary) calc(r * 1.35) calc(g * 1.35) calc(b * 1.35));
+    border-color: rgb(from var(--bg-secondary) calc(r * 1.5) calc(g * 1.5) calc(b * 1.5));
+}

@@ -133,7 +133,7 @@ export function ThreadPopup() {
             sendResponse:   (x?: any) => void,
         ) => {
 
-            console.log('Received message in thread popup');
+            // console.log('Received message in thread popup');
             
             // Parsing message
             const { 
@@ -158,7 +158,7 @@ export function ThreadPopup() {
                         return false;
                     }
                     
-                    console.log('Creating confirm new download dialogue');
+                    // console.log('Creating confirm new download dialogue');
 
                     setContent(<SaveNewDownload download={download} onSubmit={(yes) => {
                         sendResponse(yes);
