@@ -39,6 +39,7 @@ import {
 	getUserDownloads,
 	getUserSettings,
 	isPopupActive,
+	getMediaDownload,
 } from "utils/func";
 
 
@@ -47,156 +48,156 @@ import {
 const IMPORT_STATUS_UPDATE_RATE = 250;
 
 
-/**
- * Searches for the given name in F95
- * to find a best match for the actual Media.
- */
-async function searchMediaName(
-	name: string,
-): Promise<{ media: Media; certainty: number } | null> {
-	// Prompting login if needed so that the search feature is available
-	if (!(await userLoggedIn())) {
-		const success = await promptLogin();
-		if (!success) {
-			console.error("Failed to login to f95zone; triggering popup");
+// /**
+//  * Searches for the given name in F95
+//  * to find a best match for the actual Media.
+//  */
+// async function searchMediaName(
+// 	name: string,
+// ): Promise<{ media: Media; certainty: number } | null> {
+// 	// Prompting login if needed so that the search feature is available
+// 	if (!(await userLoggedIn())) {
+// 		const success = await promptLogin();
+// 		if (!success) {
+// 			console.error("Failed to login to f95zone; triggering popup");
 
-			// Opens popup if it isn't already active
-			if (!isPopupActive()) {
-				await chrome.action.openPopup();
-			}
+// 			// Opens popup if it isn't already active
+// 			if (!isPopupActive()) {
+// 				await chrome.action.openPopup();
+// 			}
 			
-			// Messages popup to tell user they aren't logged in when they need to be.
-			// The response should be a boolean for 'userLoggedIn'
-			const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
-			const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
-			if ( !!!userLoggedIn ) {
-				return null;
-			}
-		}
-	}
+// 			// Messages popup to tell user they aren't logged in when they need to be.
+// 			// The response should be a boolean for 'userLoggedIn'
+// 			const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
+// 			const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
+// 			if ( !!!userLoggedIn ) {
+// 				return null;
+// 			}
+// 		}
+// 	}
 
-	// Peforming search
-	const query = prepSearchQuery(name);
-	const url = `${BASE_SEARCH_URL}?q=${query}&${EX_SEARCH_PARAMS}`;
-	console.log(`Performing search query for ${name} at ${url}`);
+// 	// Peforming search
+// 	const query = prepSearchQuery(name);
+// 	const url = `${BASE_SEARCH_URL}?q=${query}&${EX_SEARCH_PARAMS}`;
+// 	console.log(`Performing search query for ${name} at ${url}`);
 
-	const res = await fetch(url);
+// 	const res = await fetch(url);
 
-	// Request failed
-	if (res.status < 200 || res.status > 299) {
-		console.error(`Received error response on Media search`);
-		return null;
-	}
+// 	// Request failed
+// 	if (res.status < 200 || res.status > 299) {
+// 		console.error(`Received error response on Media search`);
+// 		return null;
+// 	}
 
-	// Reading search results
-	const html = await res.text();
+// 	// Reading search results
+// 	const html = await res.text();
 
-	const message: ScrapeSearchResultsMessage = {
-		action: 'scrape-search-results',
-		payload: html,
-	};
+// 	const message: ScrapeSearchResultsMessage = {
+// 		action: 'scrape-search-results',
+// 		payload: html,
+// 	};
 
-	const searchResults = await chrome.runtime.sendMessage(JSON.stringify(message));
+// 	const searchResults = await chrome.runtime.sendMessage(JSON.stringify(message));
 
-	// Validating return
-	if (!(searchResults instanceof Array) || searchResults.length <= 0) {
-		console.error(`Failed to find search results for ${name}`);
-		return null;
-	}
+// 	// Validating return
+// 	if (!(searchResults instanceof Array) || searchResults.length <= 0) {
+// 		console.error(`Failed to find search results for ${name}`);
+// 		return null;
+// 	}
 
-	try {
-		searchResults.forEach((sr) => SearchResult.parse(sr));
-	} catch (error) {
-		console.error(
-			`Error validating search results: ${JSON.stringify(searchResults, null, 2)}`,
-		);
-		return null;
-	}
+// 	try {
+// 		searchResults.forEach((sr) => SearchResult.parse(sr));
+// 	} catch (error) {
+// 		console.error(
+// 			`Error validating search results: ${JSON.stringify(searchResults, null, 2)}`,
+// 		);
+// 		return null;
+// 	}
 
-	// Finding best match among results
-	// console.log(
-	// 	`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
-	// );
+// 	// Finding best match among results
+// 	// console.log(
+// 	// 	`Search results:\n${JSON.stringify(searchResults.slice(0, 5), null, 2)}`,
+// 	// );
 
-	const sampleSize = ( await getUserSettings() ).searchSampleSize;
-	const sample = searchResults.slice(0, sampleSize);
+// 	const sampleSize = ( await getUserSettings() ).searchSampleSize;
+// 	const sample = searchResults.slice(0, sampleSize);
 
-	// Finding the search result whose title
-	// is the most similar to 'name'
-	let bestGuess: SearchResult | undefined;
-	let bestGuessCertainty = 0.0;
+// 	// Finding the search result whose title
+// 	// is the most similar to 'name'
+// 	let bestGuess: SearchResult | undefined;
+// 	let bestGuessCertainty = 0.0;
 
-	for (const result of sample) {
+// 	for (const result of sample) {
 		
-		// Preparing title for keyword scoring
-		// by removing delimiting characters like (), [], & /
-		// and putting spaces between snake and camel-case splits.
-		// This makes the tokens extracted from the title easier to
-		// match with 'query'
-		const re = [
-			UPPER_CASE_SPLIT_REGEX,
-			SNAKE_SEGMENT_REGEX
-		].reduce((p, c) => concatRegex(p, c, '|'));
+// 		// Preparing title for keyword scoring
+// 		// by removing delimiting characters like (), [], & /
+// 		// and putting spaces between snake and camel-case splits.
+// 		// This makes the tokens extracted from the title easier to
+// 		// match with 'query'
+// 		const re = [
+// 			UPPER_CASE_SPLIT_REGEX,
+// 			SNAKE_SEGMENT_REGEX
+// 		].reduce((p, c) => concatRegex(p, c, '|'));
 
-		const prepped = result.title
-			.replaceAll(SEARCH_TOKEN_DELIMIT_REGEX, '')
-			.replaceAll(re, ' ');
+// 		const prepped = result.title
+// 			.replaceAll(SEARCH_TOKEN_DELIMIT_REGEX, '')
+// 			.replaceAll(re, ' ');
 		
-		const certainty = keywordScore(
-			query.split('+'), 
-			prepped
-		);
+// 		const certainty = keywordScore(
+// 			query.split('+'), 
+// 			prepped
+// 		);
 
-		if ( bestGuess === undefined || bestGuessCertainty < certainty ) {
-			bestGuess = result;
-			bestGuessCertainty = certainty;
-		}
-	}
+// 		if ( bestGuess === undefined || bestGuessCertainty < certainty ) {
+// 			bestGuess = result;
+// 			bestGuessCertainty = certainty;
+// 		}
+// 	}
 	
-	if (!!!bestGuess) {
-		console.error(
-			"Something went horribly wrong; bestGuess is not defined when it should be",
-		);
-		return null;
-	}
+// 	if (!!!bestGuess) {
+// 		console.error(
+// 			"Something went horribly wrong; bestGuess is not defined when it should be",
+// 		);
+// 		return null;
+// 	}
 
-	const media: Media = {
-		mediaType: bestGuess.forum,
-		mediaId: bestGuess.mediaId,
-		title: bestGuess.title,
-		threadLink: bestGuess.threadLink,
-	};
+// 	const media: Media = {
+// 		mediaType: bestGuess.forum,
+// 		mediaId: bestGuess.mediaId,
+// 		title: bestGuess.title,
+// 		threadLink: bestGuess.threadLink,
+// 	};
 
-	return { media, certainty: bestGuessCertainty };
-}
+// 	return { media, certainty: bestGuessCertainty };
+// }
 
 
-/**
- * Attempts to create a MediaDownload from the given directory item name.
- * Return also includes whether a download for this Media already exists.
- *
- * **NOTE** Currently, each call does a full scan of Media titles
- * to find which ones 'name' matches most with.
- */
-async function getMediaDownload(name: string): Promise<MediaDownload | null> {
-	// console.log(`Searching for media matching ${name}`);
+// /**
+//  * Attempts to create a MediaDownload from the given directory item name.
+//  * Return also includes whether a download for this Media already exists.
+//  *
+//  * **NOTE** Currently, each call does a full scan of Media titles
+//  * to find which ones 'name' matches most with.
+//  */
+// async function getMediaDownload(name: string): Promise<MediaDownload | null> {
+// 	// console.log(`Searching for media matching ${name}`);
 	
-	// Attempting to find matching Media
-	const result = await searchMediaName(name);
-	if (result === null) {
-		console.error("Failed to find media");
-		return null;
-	}
+// 	// Attempting to find matching Media
+// 	const result = await searchMediaName(name);
+// 	if (result === null) {
+// 		console.error("Failed to find media");
+// 		return null;
+// 	}
 
-	// console.log(JSON.stringify(result, null, 2));
+// 	// console.log(JSON.stringify(result, null, 2));
 	
-	return {
-		name,
-		media: result.media,
-		certainty: result.certainty,
-		deleted: false,
-	};
-}
+// 	return {
+// 		name,
+// 		media: result.media,
+// 		certainty: result.certainty,
+// 		deleted: false,
+// 	};
+// }
 
 
 /**

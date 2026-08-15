@@ -1,10 +1,12 @@
-import { LocalStorage, Media, MediaType, Settings, type SearchResult } from "types/data.ts";
-import type { UserNotLoggedInMessage } from "types/message";
+import { LocalStorage, Media, MediaDownload, MediaType, SearchResult, Settings } from "types/data.ts";
+import type { ScrapeSearchResultsMessage, UserNotLoggedInMessage } from "types/message";
 
 import {
+	BASE_SEARCH_URL,
 	DEFAULT_SETTINGS,
 	DETAIL_SUFFIX_REGEX,
 	DLSITE_CODE_REGEX,
+	EX_SEARCH_PARAMS,
 	FORUM_REGEX,
 	HEX_COLOR_REGEX,
 	LOCAL_STORAGE_KEYS,
@@ -14,6 +16,7 @@ import {
 	THREAD_LINK_MEDIA_ID_REGEX,
 	UPPER_CASE_SPLIT_REGEX,
 } from "utils/const";
+import z from "zod";
 
 
 /**
@@ -323,8 +326,6 @@ export function prepSearchQuery(name: string): string {
 		throw new TypeError("'name' must be a string");
 	}
 
-	// console.log('Prepping search query for ', name);
-	
 	// Matches a bunch of extra stuff that isn't
 	// part of a Media's title
 	const filterMatch = [
@@ -355,9 +356,79 @@ export function prepSearchQuery(name: string): string {
 
 
 /**
+ * Returns the most likely keywords of the given string.
+ */
+export function keywordsOf( str: string ) : string[] {
+	
+	// Matches a bunch of extra stuff that isn't
+	// part of a Media's title
+	const filterMatch = [
+		NUMBER_NO_PRECEDING_REGEX,
+		DLSITE_CODE_REGEX,
+		DETAIL_SUFFIX_REGEX
+	].reduce((prev, curr) => concatRegex(prev, curr, "|"));
+
+	// Common ways that file names split tokens
+	const delimitMatch = [
+		SEARCH_TOKEN_DELIMIT_REGEX,
+		UPPER_CASE_SPLIT_REGEX,
+	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
+
+	let cleaned = str.replaceAll(filterMatch, "");
+	// console.log(`Post filter match: ${cleaned}`);
+	
+	cleaned = cleaned.replaceAll(delimitMatch, ' ');
+	// console.log('Post delimit ', cleaned);
+
+	return cleaned.split(' ')
+		.filter(s => !!s && s.length > 0)
+		.map(s => s.trim().toLowerCase());
+}
+
+
+/**
+ * Peforms a thread search with the given keywords
+ */
+export async function queryMedia( keywords: string[] ): Promise<SearchResult[] | null> {
+	// Peforming search
+	const res = await fetch(`${BASE_SEARCH_URL}?q=${keywords.join('+')}&${EX_SEARCH_PARAMS}`);
+
+	// Request failed
+	if (res.status < 200 || res.status > 299) {
+		console.error(`Received error response on Media search`);
+		return null;
+	}
+
+	// Reading search results
+	return await scrapeSearchResults(await res.text());
+}
+
+
+/**
  * Extracts from search results page the titles and forums of each Media.
  */
-export function scrapeSearchResults(html: string): SearchResult[] | null {
+export async function scrapeSearchResults(html: string): Promise<SearchResult[] | null> {
+	
+	// Checking if DOMParser is available
+	// It won't be if this is called from the service worker.
+	if ( typeof DOMParser === 'undefined' ) {
+		const message: ScrapeSearchResultsMessage = {
+			action: 'scrape-search-results',
+			payload: html,
+		};
+
+		const res = await chrome.runtime.sendMessage(JSON.stringify(message));
+		
+		// Validating return
+		const { data: searchResults, error, success  } = z.array(SearchResult).nullable().safeParse(res);
+		if ( !success ) {
+			console.error(`Received invalid SearchResult[] from popup:\n${error.message}`);
+			return null;
+		}
+
+		return searchResults;
+	}
+	
 	const parser = new DOMParser();
 	const page = parser.parseFromString(html, "text/html");
 
@@ -465,6 +536,97 @@ export function scrapeSearchResults(html: string): SearchResult[] | null {
 	// console.log(JSON.stringify(searchResults, null, 2));
 
 	return searchResults;
+}
+
+
+/**
+ * Attempts to create a MediaDownload from the given directory item name.
+ * Return also includes whether a download for this Media already exists.
+ */
+export async function getMediaDownload(name: string): Promise<MediaDownload | null> {
+	// Prompting login if needed so that the search feature is available
+	if (!(await userLoggedIn())) {
+		const success = await promptLogin();
+		if (!success) {
+			console.error("Failed to login to f95zone; triggering popup");
+
+			// Opens popup if it isn't already active
+			if (!isPopupActive()) {
+				await chrome.action.openPopup();
+			}
+			
+			// Messages popup to tell user they aren't logged in when they need to be.
+			// The response should be a boolean for 'userLoggedIn'
+			const msg: UserNotLoggedInMessage = { action: 'user-not-logged-in' };
+			const userLoggedIn = await chrome.runtime.sendMessage(JSON.stringify(msg));
+			if ( !!!userLoggedIn ) {
+				return null;
+			}
+		}
+	}
+	
+	const keywords = keywordsOf(name);
+	const searchResults = await queryMedia(keywords);
+	
+	if ( searchResults === null ) {
+		console.error(`Received null search results for ${name}`);
+		return null;
+	}
+
+	const sampleSize = ( await getUserSettings() ).searchSampleSize;
+	const sample = searchResults.slice(0, sampleSize);
+
+	// Finding the search result whose title
+	// is the most similar to 'name'
+	let bestGuess: SearchResult | undefined;
+	let bestGuessCertainty = 0.0;
+
+	for (const result of sample) {
+		
+		// Preparing title for keyword scoring
+		// by removing delimiting characters like (), [], & /
+		// and putting spaces between snake and camel-case splits.
+		// This makes the tokens extracted from the title easier to
+		// match with 'query'
+		const re = [
+			UPPER_CASE_SPLIT_REGEX,
+			SNAKE_SEGMENT_REGEX
+		].reduce((p, c) => concatRegex(p, c, '|'));
+
+		const prepped = result.title
+			.replaceAll(SEARCH_TOKEN_DELIMIT_REGEX, '')
+			.replaceAll(re, ' ');
+		
+		const certainty = keywordScore(
+			keywords, 
+			prepped
+		);
+
+		if ( bestGuess === undefined || bestGuessCertainty < certainty ) {
+			bestGuess = result;
+			bestGuessCertainty = certainty;
+		}
+	}
+	
+	if (!!!bestGuess) {
+		console.error(
+			"Something went horribly wrong; bestGuess is not defined when it should be",
+		);
+		return null;
+	}
+
+	const media: Media = {
+		mediaType: bestGuess.forum,
+		mediaId: bestGuess.mediaId,
+		title: bestGuess.title,
+		threadLink: bestGuess.threadLink,
+	};
+	
+	return {
+		name, media,
+		certainty: bestGuessCertainty,
+		deleted: false,
+	};
 }
 
 

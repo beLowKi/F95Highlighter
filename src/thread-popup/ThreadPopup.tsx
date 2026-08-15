@@ -18,19 +18,17 @@ function ThreadDialogue(args: {
     const { title, content, onSubmit } = args;
     
     const body = ( !!content )
-        ? <Modal.Body >
-            <div className={`container-fluid p-2 m-0 ${styles.dialogueBody}`}>
-                {content}
-            </div>
+        ? <Modal.Body className={`container ${styles.dialogueBody}`}>
+            {content}
         </Modal.Body>
 
         : undefined;
     
     return (
-        <div className={styles.dialogue}>
-            <Modal.Title className={`${styles.dialogueTitle} fs-4 word-wrap`}>
+        <>
+            <Modal.Header className={`${styles.dialogueTitle} fs-4 d-flex align-items-center justify-content-center`}>
                 {title}
-            </Modal.Title>
+            </Modal.Header>
             
             {body}
             
@@ -55,7 +53,7 @@ function ThreadDialogue(args: {
                     </div>
                 </Col>                
             </Modal.Footer>
-        </div>
+        </>
     );
 }
 
@@ -69,15 +67,17 @@ function SaveNewDownload(args: {
     const content = (
         <div className="d-flex h-100 align-items-center justify-content-center">
             <div>
-                <h1 className="fs-4 text-center">{truncateStr(download.name, 100)}</h1>
+                <h1 className="fs-6 text-center">{truncateStr(download.name, 100)}</h1>
             </div>
         </div>
     );
     
-    return (<ThreadDialogue 
-        title={`Add New Download?`}
-        content={content}
-        onSubmit={onSubmit}/>);
+    return (
+        <ThreadDialogue 
+            title={`Add New Download?`}
+            content={content}
+            onSubmit={onSubmit}/>
+    );
 }
 
 
@@ -101,13 +101,7 @@ function UpdateDownload(args: {
                 
                 <div 
                     className={`d-inline-block ${styles.updateDialogueArrowContainer}`}>
-
-                    {/* <div className="container">
-                        <p>{'->'}</p>
-                    </div> */}
-
                     <Image src={rightArrow} fluid/>
-
                 </div>
 
                 <div className={`d-inline-block align-items-center justify-content-center ${styles.updateDialogueDownloadContainer}`}>
@@ -206,21 +200,18 @@ export function ThreadPopup() {
     
     
     return (
-        <div className={styles.threadPopup}>
-            <Modal.Dialog>
-                
-                <div className="d-flex align-items-center justify-content-center">
-                    <div>
-                        {!!content
-                            ? content
-                            // Shows loading gif while content loads
-                            : <Spinner animation="border" variant="primary"/>}
+        <Modal.Dialog className={`${styles.threadPopup}`}>
+            
+            {
+                !!content
+                    ? content
+                    // Shows loading gif while content loads
+                    : <div className="d-flex align-items-center justify-content-center">
+                        <Spinner animation="border" variant="primary"/>
                     </div>
-                </div>
+            }
 
-            </Modal.Dialog>
-        </div>
-        
+        </Modal.Dialog>
     );
 }
 

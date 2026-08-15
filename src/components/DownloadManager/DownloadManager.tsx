@@ -114,8 +114,8 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     } 
                     
                     try {
-                        const searchResults = scrapeSearchResults(html);
-                        // console.log(JSON.stringify(searchResults, null, 2));  // DEBUG
+                        const searchResults = await scrapeSearchResults(html);
+                        console.log(JSON.stringify(searchResults, null, 2));  // DEBUG
                         
                         sendResponse(searchResults);
                         
@@ -304,27 +304,6 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                 items.add(item.name.replace(/\.exe/i, ''));
             }
         }
-        
-        // TBD and TODO this better
-        // switch (importMode) {
-        //     case ImportMode.FULL:
-        //         break;
-
-        //     // Filtering out existing downloads
-        //     case ImportMode.NEW_ONLY:
-        //         const downloads: Record<number, MediaDownload> = 
-        //             await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS);
-
-        //         const records = Object.values(downloads);
-        //         records.sort((a, b) => a.name.localeCompare(b.name));
-                
-        //         items = items.filter( i => !!binSearch(records, (r) => i.localeCompare(r.name)) );
-                
-        //         break;
-        
-        //     default:
-        //         throw new Error(`Unhandled ImportMode: ${importMode}`);
-        // }
         
         // console.log(`Found sub-directories:\n${JSON.stringify(Array.from(items), null, 2)}`);
 

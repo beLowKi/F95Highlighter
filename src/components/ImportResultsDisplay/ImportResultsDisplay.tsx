@@ -1,13 +1,17 @@
 import type { ImportResults, LocalStorage, MediaDownload } from "types/data";
 import { Accordion, Button, Col, Image, Modal, Row, Spinner } from "react-bootstrap";
 
-import styles from "./ImportResultsDisplay.module.css";
-import rightArrow from "../../../public/icons/right-chevron.png";
 import { getUserDownloads, prepSearchQuery, truncateStr } from "utils/func";
 import { useEffect, useState } from "react";
 import MediaDownloadDisplay from "components/MediaDownloadDisplay/MediaDownloadDisplay";
 
+import rightArrow from "../../../public/icons/right-chevron.png";
+import styles from "./ImportResultsDisplay.module.css";
 
+
+/**
+ * Column size of the center arrow of ImportResult components 
+ */
 const ARROW_COLUMN_SIZE = 2;
 
 
