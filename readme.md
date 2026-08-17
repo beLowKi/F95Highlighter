@@ -1,11 +1,6 @@
 # F95 Highlighter
 
-This project is a chrome/opera extension that tracks media downloaded from
-f95zone.to and highlights their displays on the site. For example:
-
-![Shows a grid of media tiles with the center one bordered in bright green](./public/examples/latestUpdatesExample1.png)
-
-Here, the game "Nekotto Island" is flagged as downloaded with a high certainty (which is discussed later), so it has a bright green border. The purpose of which is to make it easier to tell what you have and haven't downloaded from the site without needing to check your files each time.
+This project is a chrome/opera extension that tracks media downloaded from f95zone.to and highlights their displays on the site. The purpose of which is to make it easier to tell what you have and haven't downloaded from the site without needing to check your files each time.
 
 ## Getting Downloads
 
