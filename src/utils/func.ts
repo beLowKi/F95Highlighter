@@ -1,22 +1,69 @@
-import { LocalStorage, Media, MediaDownload, MediaType, SearchResult, Settings } from "types/data.ts";
+import { Media, MediaDownload, MediaType, SearchResult } from "types/data.ts";
 import type { ScrapeSearchResultsMessage, UserNotLoggedInMessage } from "types/message";
 
 import {
-	BASE_SEARCH_URL,
-	DEFAULT_SETTINGS,
 	DETAIL_SUFFIX_REGEX,
 	DLSITE_CODE_REGEX,
-	EX_SEARCH_PARAMS,
 	FORUM_REGEX,
 	HEX_COLOR_REGEX,
-	LOCAL_STORAGE_KEYS,
 	NUMBER_NO_PRECEDING_REGEX,
 	SEARCH_TOKEN_DELIMIT_REGEX,
 	SNAKE_SEGMENT_REGEX,
 	THREAD_LINK_MEDIA_ID_REGEX,
 	UPPER_CASE_SPLIT_REGEX,
 } from "utils/const";
+
 import z from "zod";
+import meta, { LocalStorage, MEDIA_QUERY_TIMEOUT, Settings } from "./meta";
+import f95, { Forum, OrderBy } from "./f95";
+
+
+export function loopFunc( 
+	func: (() => void) | (() => Promise<void>), 
+	rate: number 
+): { 
+	loop: Promise<void>, 
+	controller: AbortController 
+} {
+
+	const abortCtrl = new AbortController();
+
+	const loop = new Promise<void>((res, rej) => {
+		let queued: Timer;
+
+		// console.log('Loop begun');
+		
+		const step = async () => {
+			// console.log('Step entered');
+			
+			// Checks if loop has been aborted
+			if ( abortCtrl.signal.aborted ) {
+				clearTimeout(queued);
+				// res();
+				return;
+			}
+
+			// Queuing next step
+			queued = setTimeout(step, rate);
+
+			// Performs looped action
+			const promise = func();
+			if ( promise instanceof Promise ) {
+				await promise;
+			}
+		};
+		
+		step().then().catch(err => console.error(`Error during loop: ${err}`));
+		
+		// Resolves loop once 'abort' is called
+		abortCtrl.signal.addEventListener('abort', () => {
+			clearTimeout(queued);
+			res();
+		});
+	});
+
+	return { loop, controller: abortCtrl };
+}
 
 
 /**
@@ -136,26 +183,30 @@ export function isPopupActive(): boolean {
  * TBD on if this should just re-init downloads if they're missing from storage
  * instead of every call to this func having to check if it returned null.
  */
-export async function getUserDownloads(): Promise<LocalStorage['downloads']> {
+export async function getOrInitDownloads(): Promise<LocalStorage['downloads']> {
 	let storage: any;
 
 	// NOTE an Error is thrown when getting keys that don't exist
 	try {
-		storage = (await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS)).downloads;
+		storage = (await chrome.storage.local.get(meta.LOCAL_STORAGE_KEYS.DOWNLOADS)).downloads;
 		
 	} catch (error) {
 		// console.error(`Attempted to get user downloads before it was initialized`);
-
+		
 		// Re-initializing
-		await chrome.storage.local.set({[LOCAL_STORAGE_KEYS.DOWNLOADS]: {}});
+		await chrome.storage.local.set({[meta.LOCAL_STORAGE_KEYS.DOWNLOADS]: {}});
 		
 		storage = {};
 	}
 	
 	// Validating
 	const { data: downloads, error, success } = LocalStorage.shape.downloads.safeParse(storage);
+
+	// Re-initializes if in broken state
 	if ( !success ) {
-		throw new Error(`Broken download storage:\n${error.message}\n${JSON.stringify(storage, null, 2)}`);
+		console.error(`Broken download storage:\n${error.message}\n${JSON.stringify(storage, null, 2)}`);
+		await chrome.storage.local.set({[meta.LOCAL_STORAGE_KEYS.DOWNLOADS]: {}});
+		return {};
 	}
 
 	return downloads;
@@ -165,27 +216,37 @@ export async function getUserDownloads(): Promise<LocalStorage['downloads']> {
 /**
  * Returns user settings.
  */
-export async function getUserSettings(): Promise<Settings> {
+export async function getOrInitSettings(): Promise<Settings> {
 	let storage: any;
 
 	// This looks weird because chrome.storage gets return the full
 	// { [key]: value } object instead of just the value the key points to,
 	// so you have to access the key twice.
 	try {
-		storage = (await chrome.storage.local.get(LOCAL_STORAGE_KEYS.SETTINGS))[LOCAL_STORAGE_KEYS.SETTINGS];
-
+		storage = (await chrome.storage.local.get(meta.LOCAL_STORAGE_KEYS.SETTINGS))[meta.LOCAL_STORAGE_KEYS.SETTINGS];
+		// console.log(`Settings in storage:\n${JSON.stringify(storage, null, 2)}`);
+		
 	} catch (error) {
 		await chrome.storage.local.set({
-			[LOCAL_STORAGE_KEYS.SETTINGS]: DEFAULT_SETTINGS
+			[meta.LOCAL_STORAGE_KEYS.SETTINGS]: meta.DEFAULT_SETTINGS
 		});
 
-		storage = DEFAULT_SETTINGS;
+		storage = meta.DEFAULT_SETTINGS;
 	}
 
 	// Validating against model
 	const { data: settings, error, success } = Settings.safeParse(storage);
+	// console.log(`Parsed:\n${JSON.stringify(settings, null, 2)}`);
+	
+	// Re-initializes settings if they're in a broken state
 	if ( !success ) {
-		throw new Error(`Error: settings in broken state:\n${error.message}`);
+		console.error(`Error: settings in broken state:\n${error.message}`);
+
+		await chrome.storage.local.set({
+			[meta.LOCAL_STORAGE_KEYS.SETTINGS]: meta.DEFAULT_SETTINGS
+		});
+
+		return meta.DEFAULT_SETTINGS;
 	}
 
 	return settings;
@@ -296,7 +357,7 @@ export async function userLoggedIn(): Promise<boolean> {
 		url: "https://f95zone.to",
 	});
 
-	return userSession !== undefined;
+	return userSession?.value !== undefined;
 }
 
 
@@ -305,7 +366,7 @@ export async function userLoggedIn(): Promise<boolean> {
  */
 export async function promptLogin(): Promise<boolean> {
 	// Opens popup if it isn't already active
-	if (!isPopupActive()) {
+	if ( !isPopupActive() ) {
 		await chrome.action.openPopup();
 	}
 	
@@ -319,52 +380,71 @@ export async function promptLogin(): Promise<boolean> {
 
 
 /**
- * Converts the given name to a valid search query.
+ * Returns the URL which searches for the given name
+ * on f95. This handles splitting the word into keywords.
  */
-export function prepSearchQuery(name: string): string {
-	if (typeof name !== "string") {
-		throw new TypeError("'name' must be a string");
-	}
-
-	// Matches a bunch of extra stuff that isn't
-	// part of a Media's title
-	const filterMatch = [
-		NUMBER_NO_PRECEDING_REGEX,
-		DLSITE_CODE_REGEX,
-		DETAIL_SUFFIX_REGEX
-	].reduce((prev, curr) => concatRegex(prev, curr, "|"));
-
-	// Common ways that file names split tokens
-	const delimitMatch = [
-		SEARCH_TOKEN_DELIMIT_REGEX,
-		UPPER_CASE_SPLIT_REGEX,
-	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
-
-	let cleaned = name.replaceAll(filterMatch, "");
-	// console.log(`Post filter match: ${cleaned}`);
+// export function getSearchQuery( name: string ): string {
+// 	// Extra parameters that tune the search
+// 	const exParams: string[] = [];
 	
-	cleaned = cleaned.replaceAll(delimitMatch, ' ');
-	// console.log('Post delimit ', cleaned);
+// 	// Special cases
+// 	// DLSite codes ((RJ|RG)12312312) are often included 
+// 	// in a thread's first post, and are unique, so a search
+// 	// can be just these codes.
+// 	const dlsiteCode = DLSITE_CODE_REGEX.exec(name)?.at(0);
+// 	if ( dlsiteCode !== undefined ) {
+// 		exParams.push(f95.search.params.SORY_BY_RELEVANCE);
+// 		return `${f95.search.BASE_URL}?q=${dlsiteCode.trim()}&${exParams.join('&')}`;
+// 	}
 
-	const tokens = cleaned.split(' ')
-		.filter(s => !!s && s.length > 0)
-		.map(s => s.trim().toLowerCase());
+// 	// Matches a bunch of extra stuff that isn't
+// 	// part of a Media's title
+// 	const filterMatch = [
+// 		NUMBER_NO_PRECEDING_REGEX,
+// 		DETAIL_SUFFIX_REGEX
+// 	].reduce((prev, curr) => concatRegex(prev, curr, "|"));
 
-	// Joins tokens in the format that search queries expect
-	return tokens.join("+");
-}
+// 	// Common ways that file names split tokens
+// 	const delimitMatch = [
+// 		SEARCH_TOKEN_DELIMIT_REGEX,
+// 		UPPER_CASE_SPLIT_REGEX,
+// 	].reduce((prev, curr) => concatRegex(prev, curr, "|"), / /g);
+
+// 	let cleaned = name.replaceAll(filterMatch, "");
+// 	// console.log(`Post filter match: ${cleaned}`);
+	
+// 	cleaned = cleaned.replaceAll(delimitMatch, ' ');
+// 	// console.log('Post delimit ', cleaned);
+
+// 	const tokens = cleaned.split(' ')
+// 		.filter(s => !!s && s.length > 0)
+// 		.map(s => s.trim().toLowerCase());
+
+// 	// Joins tokens in the format that search queries expect
+// 	const q = tokens.join("+");
+// 	exParams.push(f95.search.params.TITLES_ONLY, f95.search.params.SORY_BY_RELEVANCE);
+	
+// 	return `${f95.search.BASE_URL}?q=${q}&${exParams.join('&')}`;
+// }
 
 
 /**
  * Returns the most likely keywords of the given string.
  */
 export function keywordsOf( str: string ) : string[] {
-	
+	// Special cases
+	// DLSite codes ((RJ|RG)12312312) are often included 
+	// in a thread's first post, and are unique, so a search
+	// can be just these codes.
+	const dlsiteCode = DLSITE_CODE_REGEX.exec(str)?.at(0);
+	if ( dlsiteCode !== undefined ) {
+		return [dlsiteCode];
+	}
+
 	// Matches a bunch of extra stuff that isn't
 	// part of a Media's title
 	const filterMatch = [
 		NUMBER_NO_PRECEDING_REGEX,
-		DLSITE_CODE_REGEX,
 		DETAIL_SUFFIX_REGEX
 	].reduce((prev, curr) => concatRegex(prev, curr, "|"));
 
@@ -389,19 +469,28 @@ export function keywordsOf( str: string ) : string[] {
 /**
  * Peforms a thread search with the given keywords
  */
-export async function queryMedia( keywords: string[] ): Promise<SearchResult[] | null> {
-	// Peforming search
-	const res = await fetch(`${BASE_SEARCH_URL}?q=${keywords.join('+')}&${EX_SEARCH_PARAMS}`);
+// export async function queryMedia( name: string ): Promise<SearchResult[] | null> {
 
-	// Request failed
-	if (res.status < 200 || res.status > 299) {
-		console.error(`Received error response on Media search`);
-		return null;
-	}
+// 	// Peforming search
+// 	const url = getSearchQuery(name);
+// 	console.log(`Querying ${url}`);
+	
+// 	let res;
+// 	try {
+// 		res = await fetch(url, { signal: AbortSignal.timeout(meta.MEDIA_QUERY_TIMEOUT) });
+// 	} catch (error) {
+// 		return null;	
+// 	}
 
-	// Reading search results
-	return await scrapeSearchResults(await res.text());
-}
+// 	// Request failed
+// 	if (res.status < 200 || res.status > 299) {
+// 		console.error(`Received error response on Media search`);
+// 		return null;
+// 	}
+
+// 	// Reading search results
+// 	return await scrapeSearchResults(await res.text());
+// }
 
 
 /**
@@ -566,14 +655,29 @@ export async function getMediaDownload(name: string): Promise<MediaDownload | nu
 	}
 	
 	const keywords = keywordsOf(name);
-	const searchResults = await queryMedia(keywords);
+	// console.log(`Keywords of ${name}:\n${JSON.stringify(keywords, null, 2)}`);
+	
+	const searchResults = await f95.search.searchThreads(keywords.join(' '), { 
+		displayAsThreads: true,
+		orderBy: OrderBy.Relevance, 
+		timeout: MEDIA_QUERY_TIMEOUT,
+		
+		// Limits search to threads of supported MediaTypes
+		forums: [Forum.Games, Forum.ComicsAndStills, Forum.AnimationsAndLoops]
+	});
+
+	// TBD multi-search as toggleable feature?
+	// if enabled and 0 searchResults at or above mid certainty, then
+	// attempt to search with different params like titles_only?
+	
+	// console.log('Top results for ', name, JSON.stringify(searchResults?.slice(0, 5), null, 2));
 	
 	if ( searchResults === null ) {
 		console.error(`Received null search results for ${name}`);
 		return null;
 	}
 
-	const sampleSize = ( await getUserSettings() ).searchSampleSize;
+	const sampleSize = ( await getOrInitSettings() ).searchDepth;
 	const sample = searchResults.slice(0, sampleSize);
 
 	// Finding the search result whose title
@@ -598,7 +702,7 @@ export async function getMediaDownload(name: string): Promise<MediaDownload | nu
 			.replaceAll(re, ' ');
 		
 		const certainty = keywordScore(
-			keywords, 
+			keywordsOf(name), 
 			prepped
 		);
 
@@ -824,11 +928,6 @@ export function keywordMap(
 	const occurrences = new Map<string, number[]>();
 
 	for (const word of keywords) {
-		// TODO this makes this function less modular but it's 
-		// how I need it for this extension. It would technically be better
-		// if there were function param(s) for how exact token matching should be.
-		// const re = new RegExp(word, 'gi');
-		// occurrences.set(word, findIndexAll((x: string) => re.test(x), tokens));
 		occurrences.set(word, getIndexesOfArr(word, tokens));
 	}
 

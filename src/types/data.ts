@@ -1,5 +1,4 @@
-import { HEX_COLOR_REGEX, RGB_REGEX } from "utils/const";
-import z from "zod";
+import { z } from "zod";
 
 
 /**
@@ -33,7 +32,7 @@ export type Media = z.infer<typeof Media>;
 export const MediaDownload = z.strictObject({
 	name: 		z.string(),
 	media:		Media,
-	certainty: 	z.float32(), // TODO refine to only accept within [0.0, 1.0]
+	certainty: 	z.number().min(0.0).max(1.0),
 	deleted: 	z.boolean().default(false),
 });
 
@@ -110,40 +109,6 @@ export const ImportResults = z.strictObject({
 });
 
 export type ImportResults = z.infer<typeof ImportResults>;
-
-
-/**
- * User settings
- */
-export const Settings = z.strictObject({
-	searchSampleSize:		z.number(),
-	highlights:				z.strictObject({
-		uncertainColor:			z.string(),
-		highCertaintyColor: 	z.string(),
-		midCertaintyColor: 		z.string(),
-		lowCertaintyColor: 		z.string(),
-	})
-})
-	// Forces every color string to be hex string
-	// rgb(X, X, X) isn't allowed because react-bootstrap
-	// color pickers require hex strings for their 'value' 
-	.refine((value) => {
-		const colors = Object.values(value.highlights);
-		return colors.every((c) => HEX_COLOR_REGEX.test(c));
-	}, { message: 'Highlights must be valid RGB strings' });
-
-export type Settings = z.infer<typeof Settings>;
-
-
-/**
- * Local Storage structure
- */
-export const LocalStorage = z.strictObject({
-	downloads: z.record(z.coerce.number(), MediaDownload),
-	settings: Settings,
-});
-
-export type LocalStorage = z.infer<typeof LocalStorage>;
 
 
 /**

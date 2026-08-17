@@ -1,17 +1,10 @@
 import type { AddDownloadsMessage, RemoveDownloadsMessage } from "types/message";
-import { LocalStorage, Media, MediaDownload, MediaType, Settings } from "types/data";
-import { LOCAL_STORAGE_KEYS, THREAD_LINK_MEDIA_ID_REGEX } from "utils/const";
-import { getUserDownloads, getUserSettings } from "utils/func";
+import { Media, MediaDownload, MediaType } from "types/data";
+import { THREAD_LINK_MEDIA_ID_REGEX } from "utils/const";
+import { getOrInitDownloads, getOrInitSettings } from "utils/func";
 
 import styles from 'latestUpdates.module.css';
-
-
-// console.log("latest updates content script loaded");
-
-// TODO it'd be cool if there was a 'click to add' feature
-// where clicking a Media tile adds it as a download.
-// I'm thinking a toggle in the popup that also prevents
-// it from closing when clicked off of?
+import meta, { LocalStorage, Settings } from "./utils/meta";
 
 
 // Stores the colors used to show different certainties
@@ -29,8 +22,38 @@ let downloads: LocalStorage['downloads'];
 /**
  * Returns the mediaType currently being shown
  */
-function getCurrentMediaType(): MediaType {
-    throw new Error('getCurrentMediaType not implemented');
+function getCurrentMediaType(): MediaType | null {
+    const categoryEl = document.getElementById('filter-block_cat');
+    if ( categoryEl === null ) {
+        console.error('Failed to find category Element');
+        return null;
+    }
+
+    // The category element has a list of buttons, and the selected
+    // has the 'filter-selected' class
+    const selectedEl = categoryEl.querySelector('div.filter-block_content div:has(a.filter-selected)');
+    if ( selectedEl === null ) {
+        console.error('Failed to get selected element');
+        return null;
+    }
+
+    // Converting text to MediaType
+    const text = selectedEl.textContent.trim().toLowerCase();
+    
+    switch ( text ) {
+        case 'games':
+            return 'GAMES';
+            
+        case 'comics':
+            return 'COMICS & STILLS';
+        
+        case 'animations':
+            return 'ANIMATIONS & LOOPS'
+        
+        // This'll trigger for assets and mods
+        default:
+            return null;
+    }
 }
 
 
@@ -61,14 +84,13 @@ function getTileMedia( tile: HTMLDivElement ): Media | null {
         return null;
     }
     
-    // TODO
-    // const mediaType = getCurrentMediaType();
+    const mediaType = getCurrentMediaType();
 
     return {
         mediaId: +mediaId,
         title: titleEl.textContent,
         threadLink, 
-        // mediaType
+        mediaType: mediaType || undefined
     }
 }
 
@@ -220,13 +242,19 @@ async function main(): Promise<void> {
         console.error('Failed to find item wrapper');
         return;
     }
+
+    // ELement containing category-select buttons
+    const categoryEl = document.getElementById('filter-block_cat');
+    if ( categoryEl === null ) {
+        console.error('Failed to find category Element');
+        return;
+    }
+
     
     // Initial load of downloads and settings
-    getUserDownloads().then(res => downloads = res);
-    getUserSettings().then(res => highlights = res.highlights);
+    getOrInitDownloads().then(res => downloads = res);
+    getOrInitSettings().then(res => highlights = res.highlights);
     
-    // highlights = ( await getUserSettings() ).highlights;
-
     // Tracks number of media tiles updated
     let numTilesUpdated = 0;
     
@@ -260,6 +288,11 @@ async function main(): Promise<void> {
     // Media tiles are loaded asynchronously, so an observor is
     // needed to update displays as they appear.
     const mediaTileObservor = new MutationObserver(async (mutations, observor) => {
+        // Doesn't bother listening to mutations
+        // unless the category is a valid MediaType
+        // const mtype = getCurrentMediaType();
+        // if ( mtype === null ) return; 
+        
         for (const mutation of mutations) {
             if ( mutation.type !== 'childList' ) continue;
             
@@ -283,26 +316,57 @@ async function main(): Promise<void> {
         }
     });
     
+
     // Updates downloads and highlight colors whenever storage 
     // changes and triggers a tile update
     chrome.storage.local.onChanged.addListener(async (changes) => {
         // Downloads were changed
-        if ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
-            downloads = changes[LOCAL_STORAGE_KEYS.DOWNLOADS].newValue;
+        if ( meta.LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
+            downloads = changes[meta.LOCAL_STORAGE_KEYS.DOWNLOADS].newValue;
             queueUpdate(new AbortController().signal);
         }
         
         // Highlight settings were changed
         if ( 
-            LOCAL_STORAGE_KEYS.SETTINGS in changes && 
-            'highlights' in changes[LOCAL_STORAGE_KEYS.SETTINGS].newValue
+            meta.LOCAL_STORAGE_KEYS.SETTINGS in changes && 
+            'highlights' in changes[meta.LOCAL_STORAGE_KEYS.SETTINGS].newValue
         ) {
-            highlights = changes[LOCAL_STORAGE_KEYS.SETTINGS].newValue.highlights;
+            highlights = changes[meta.LOCAL_STORAGE_KEYS.SETTINGS].newValue.highlights;
             queueUpdate(new AbortController().signal);
         }
     });
     
-    mediaTileObservor.observe(itemWrapper, { childList: true });
+    // Gets category-select buttons so that tile updates can be turned off
+    // when showing unsupported media like assets and mods
+    const categorySelectButtons = 
+        categoryEl.querySelectorAll('div.filter-block_content div:has(a.filter-block_button)');
+    
+    categorySelectButtons.forEach(el => {
+        el.addEventListener('click', async () => {
+            const text = el.textContent.trim().toLowerCase();
+            const isValidType = ['games', 'animations', 'comics'].includes(text);
+
+            // console.log(`Clicked ${text}; is valid type: ${isValidType}`);
+
+            if ( isValidType ) {
+                mediaTileObservor.observe(itemWrapper, { childList: true });     
+
+                // Triggers immediate update when connecting observor
+                // NOTE I wish there was an easy to check if the observor
+                // is already connected, but, since repeated calls to this
+                // overwrite each other, it shouldn't be a big deal.
+                const controller = new AbortController();
+                await queueUpdate(controller.signal);
+
+            } else {
+                mediaTileObservor.disconnect();
+            }
+        });
+    });
+    
+    // Initial update connection if showing supported MediaType
+    const mtype = getCurrentMediaType();
+    if ( mtype !== null ) mediaTileObservor.observe(itemWrapper, { childList: true });
 }
 
 

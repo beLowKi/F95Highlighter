@@ -88,8 +88,6 @@ function UpdateDownload(args: {
 }) {
 
     const { old, new: newDownload, onSubmit } = args;
-
-    // TODO setting somewhere or calculated from dialogue box height? idk
     const maxNameLength = 30;
     
     const content = (

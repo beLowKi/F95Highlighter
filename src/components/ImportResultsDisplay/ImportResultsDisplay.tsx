@@ -1,12 +1,14 @@
-import type { ImportResults, LocalStorage, MediaDownload } from "types/data";
+import type { ImportResults, MediaDownload } from "types/data";
 import { Accordion, Button, Col, Image, Modal, Row, Spinner } from "react-bootstrap";
 
-import { getUserDownloads, prepSearchQuery, truncateStr } from "utils/func";
+import { getOrInitDownloads, truncateStr } from "utils/func";
 import { useEffect, useState } from "react";
 import MediaDownloadDisplay from "components/MediaDownloadDisplay/MediaDownloadDisplay";
 
 import rightArrow from "../../../public/icons/right-chevron.png";
 import styles from "./ImportResultsDisplay.module.css";
+import { getThreadSearchUrl } from "utils/f95";
+import type { LocalStorage } from "utils/meta";
 
 
 /**
@@ -116,11 +118,12 @@ function UpdatedMedia(args: { old: MediaDownload, new: MediaDownload }) {
 
 function FailedItem(args: { item: string }) {
     const { item } = args;
+    const url = getThreadSearchUrl(item);
     
     return (
         <ImportResult
             left={item}
-            right={prepSearchQuery(item).replaceAll('+', ' ')}/>
+            right={<a href={url} target="_blank" rel="noopener noreferrer" className="fs-6">link</a>}/>
     );
 }
 
@@ -130,29 +133,12 @@ function Success(args: { results: ImportResults }) {
 
     // Begins loading downloads
     useEffect(() => {
-        getUserDownloads()
+        getOrInitDownloads()
             .then(ds => setDownloads(ds))
             .catch(err => console.error(`Error loading downloads for import Success ${err}`));
     }, []);
     
     const { results } = args;
-
-    /**
-     * TODO
-     *  1) show check icon for a bit
-     *  2) transition to list of 
-     *      
-     *      +-------------------+
-     *      | New Media         |
-     *      | [NewMedia...]     |
-     *      |                   |
-     *      | Updated           |
-     *      | [UpdatedMedia...] |
-     *      |                   |
-     *      | Failed            |
-     *      | [FailedItem...]   |
-     *      +-------------------+
-     */
     
     let content: JSX.Element;
 
@@ -185,7 +171,7 @@ function Success(args: { results: ImportResults }) {
         // Creating updated media rows
         const updatedMedia = ( results.updatedMedia !== undefined )
             ? Object.entries(results.updatedMedia).map(([item, update]) => (
-                <UpdatedMedia old={update.old} new={update.new}/>
+                <UpdatedMedia old={update.old} new={update.new} key={update.new.media.mediaId}/>
             ))
 
             : null;
@@ -193,7 +179,7 @@ function Success(args: { results: ImportResults }) {
         // Creating failed item rows
         const failedItems = ( results.failedItems !== undefined )
             ? results.failedItems.map(i => (
-                <FailedItem item={i}/>
+                <FailedItem item={i} key={i}/>
             ))
             : null;
         
