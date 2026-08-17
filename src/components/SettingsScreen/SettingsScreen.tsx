@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { Button, Col, Form, OverlayTrigger, Row, Tooltip } from "react-bootstrap";
-import { Settings } from "types/data";
-import { LOCAL_STORAGE_KEYS } from "utils/const";
+import meta, { Settings, SETTINGS_DESCRIPTIONS } from "utils/meta";
+
 
 const FORM_IDS = {
-    SEARCH_SAMPLE_SIZE:       'search-sample-size',
-    UNCERTAIN_COLOR:         'uncertain-highlight',
-    LOW_CERTAINTY_COLOR:      'lowCertainty-highlight',
-    MID_CERTAINTY_COLOR:      'midCertainty-highlight',
-    HIGH_CERTAINTY_COLOR:     'highCertainty-highlight',
+    STRICT_MODE:                'strict-mode',
+    SEARCH_SAMPLE_SIZE:         'search-sample-size',
+    UNCERTAIN_COLOR:            'uncertain-highlight',
+    LOW_CERTAINTY_COLOR:        'lowCertainty-highlight',
+    MID_CERTAINTY_COLOR:        'midCertainty-highlight',
+    HIGH_CERTAINTY_COLOR:       'highCertainty-highlight',
 } as const;
 
 
@@ -23,8 +24,11 @@ export function SettingsScreen(args: { settings: Settings }) {
         event.preventDefault();
         // console.log(`Submitted settings: ${JSON.stringify(settingData, null, 2)}`);
         
+        // Converting searchDepth to number
+        settingData.searchDepth = +settingData.searchDepth;
+        
         // Updates storage
-        await chrome.storage.local.set({ [LOCAL_STORAGE_KEYS.SETTINGS]: settingData });
+        await chrome.storage.local.set({ [meta.LOCAL_STORAGE_KEYS.SETTINGS]: settingData });
     }
     
     function handleReset(): void {
@@ -32,16 +36,23 @@ export function SettingsScreen(args: { settings: Settings }) {
     }
     
     function handleChange( event: any ) {
-        const key = event.target.name;
-        // console.log(key, (key in Settings.shape.highlights.shape));
+        const data: Settings = { ...settingData };
         
+        // Checking if changed value is a highlight; in which case,
+        // it needs to go inside the 'highlights' property.
+        const key = event.target.name;
         if ( !( key in Settings.shape.highlights.shape ) ) {
-            setSettingData({ ...settingData, [event.target.name]: event.target.value });
+            (data as any)[event.target.name] = event.target.value;
+        } else {
+            data.highlights[key as keyof Settings['highlights']] = event.target.value;
+        }
+
+        // Double-checking that it's still valid Settings
+        const { data: parsed, error, success } = Settings.safeParse(data);
+        if ( !success ) {
+            console.error(`Settings form gave broken data:\n${error.message}`);
             return;
         }
-        
-        const data = { ...settingData };
-        data.highlights[key as keyof Settings['highlights']] = event.target.value;
 
         setSettingData(data);
     }
@@ -52,39 +63,74 @@ export function SettingsScreen(args: { settings: Settings }) {
 
             <Row xs={8}>
 
-                {/* Search sample size */}
+                {/* Strict mode flag */}
                 <Form.Group>
-                    <OverlayTrigger
-                        delay={{ show: 350, hide: 200 }}
-                        placement="bottom"
-                        overlay={<Tooltip>Number of top search results checked per imported download</Tooltip>}>
+                    <Row>
+                        <Col xs={6}>
+                            <OverlayTrigger
+                                delay={{ show: 350, hide: 200 }}
+                                placement="bottom"
+                                overlay={<Tooltip>{SETTINGS_DESCRIPTIONS.strictMode}</Tooltip>}>
 
-                        <Form.Label>
-                            <p>
-                                Search Sample Size: {settingData.searchSampleSize}
-                            {settingData.searchSampleSize > 7
-                                ? <p style={{ fontSize: 15 }}>
-                                    <b>**WARNING**</b> Large values may make importing take a lot longer
-                                </p>
-                                : null}
-                            </p>
-                            
-                        </Form.Label>
-                        
-                    </OverlayTrigger>
-                    
-                    <Form.Range id={FORM_IDS.SEARCH_SAMPLE_SIZE} 
-                        name="searchSampleSize"
-                        value={settingData.searchSampleSize}
-                        onChange={handleChange}
-                        min={1} max={10}/>
+                                <Form.Label>
+                                    Strict Mode:
+                                </Form.Label>
+                                
+                            </OverlayTrigger>
+                        </Col>
+
+                        <Col className="d-flex justify-content-center">
+                            <Form.Switch id={FORM_IDS.STRICT_MODE}
+                                name="strictMode"
+                                value={(settingData.strictMode) ? 'true' : 'false'}
+                                onChange={handleChange}/>
+                        </Col>
+                    </Row>
                 </Form.Group>
+                
+                {/* Search Depth */}
+                <Form.Group>
+                    <Row>
+                        <Col xs={6}>
+                            <OverlayTrigger
+                                delay={{ show: 350, hide: 200 }}
+                                placement="bottom"
+                                overlay={<Tooltip>{SETTINGS_DESCRIPTIONS.searchDepth}</Tooltip>}>
 
+                                <Form.Label>
+                                    Search Depth: {settingData.searchDepth}
+                                </Form.Label>
+                                
+                            </OverlayTrigger>
+                        </Col>
+                        
+                        <Col>
+                            <Form.Range id={FORM_IDS.SEARCH_SAMPLE_SIZE} 
+                                name="searchDepth"
+                                value={settingData.searchDepth}
+                                onChange={handleChange}
+                                min={1} max={10}/>
+                        </Col>
+                    </Row>
+
+                    <Row>
+                        <Col>
+                            {
+                                settingData.searchDepth > 7
+                                    ? <p className="text-center" style={{ fontSize: '15px' }}>
+                                        <b>**WARNING**</b> Larger values slow importing
+                                    </p>
+                                    : null
+                            }
+                        </Col>
+                    </Row>
+                </Form.Group>
+                
                 {/* Highlight Colors */}
                 <Form.Group>
                     <OverlayTrigger
                         delay={{ show: 350, hide: 200 }}
-                        overlay={<Tooltip>Colors marking known downloads</Tooltip>}>
+                        overlay={<Tooltip>{SETTINGS_DESCRIPTIONS.highlights}</Tooltip>}>
 
                         <Form.Label>Highlights</Form.Label>
                         
@@ -167,13 +213,14 @@ export function SettingsScreen(args: { settings: Settings }) {
             <Row xs={2} className="m-0 pt-4">
                 <Col>
                     <Button className="w-100" 
-                        variant="primary" type="submit">
+                        variant="outline-primary" type="submit">
                         Save
                     </Button>
                 </Col>
+                
                 <Col>
                     <Button className="w-100" 
-                        variant="secondary" type="reset">
+                        variant="outline-secondary" type="reset">
                         Cancel
                     </Button>
                 </Col>

@@ -8,12 +8,11 @@ import settingsIcon from '../../public/icons/settings.png';
 import TabNavigator from "../components/TabNavigator/TabNavigator";
 import DownloadManager from "../components/DownloadManager/DownloadManager";
 import InfoScreen from "../components/InfoScreen/InfoScreen";
-import type { Settings } from "types/data";
-import { getUserSettings } from "utils/func";
+import { getOrInitSettings, userLoggedIn } from "utils/func";
 import SettingsScreen from "../components/SettingsScreen/SettingsScreen";
-import { LOCAL_STORAGE_KEYS } from "utils/const";
 
 import styles from "./MainPopup.module.css"; 
+import meta, { Settings } from "utils/meta";
 
 
 const TAB_KEYS = {
@@ -25,13 +24,14 @@ const TAB_KEYS = {
 
 export function MainPopup() {
     const [isBusy, setIsBusy] = useState(false);
+    const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
     const [settings, setSettings] = useState<Settings>();
     
-
     // Updates in-memory settings
     async function refreshSettings(): Promise<void> {
         try {
-            const newSettings = await getUserSettings();
+            const newSettings = await getOrInitSettings();
+            // console.log(`Received settings: ${JSON.stringify(newSettings, null, 2)}`);
             setSettings(newSettings);
         } catch (error) {
             console.error(`Error refreshing settings: ${error}`);
@@ -44,15 +44,18 @@ export function MainPopup() {
      */
     useEffect(() => {
 
+        // Checks if the user is logged in
+        userLoggedIn().then(yes => setIsUserLoggedIn(yes));
+        
         // Updates in-memory settings object when settings are changed
         const storageListener = async (
             changes: { [key: string]: chrome.storage.StorageChange }
         ) => {
-            if ( LOCAL_STORAGE_KEYS.SETTINGS in changes ) {
+            if ( meta.LOCAL_STORAGE_KEYS.SETTINGS in changes ) {
                 await refreshSettings();
             }
         }
-
+        
         // Connecting listeners
         chrome.storage.local.onChanged.addListener(storageListener);
         
@@ -80,7 +83,7 @@ export function MainPopup() {
                     <TabContent className="container overflow-hidden p-0">        
                         {/* DownloadManager Tab */}
                         <TabPane eventKey={TAB_KEYS.DOWNLOADS}>
-                            <DownloadManager isBusy={isBusy}/>
+                            <DownloadManager isBusy={isBusy} isUserLoggedIn={isUserLoggedIn}/>
                         </TabPane>
                         
                         {/* Info Tab */}

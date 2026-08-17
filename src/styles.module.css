@@ -1,0 +1,16 @@
+:root {
+    --bg-primary: rgb(45, 45, 45);
+    --bg-secondary: rgb(150, 38, 38);
+}
+
+.bg-main {
+    background-color: var(--bg-primary);
+    color: white;
+}
+
+.bg-secondary {
+    background-color: var(--bg-secondary);
+    color: white;
+}
+
+

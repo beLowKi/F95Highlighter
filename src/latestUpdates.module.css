@@ -1,0 +1,30 @@
+@import url('./styles.module.css');
+
+/* FIXME is way too small for comics&stills idk y */
+.downloadButton {
+    background-color: var(--bg-secondary);
+    color: white;
+
+    width: 10%;
+    min-width: 30px;
+    max-width: 50px;
+    aspect-ratio: 1;
+    font-size: 20px;
+    text-align: center;
+    overflow: hidden;
+    
+    position: absolute;
+    top: 4%;
+    right: 3%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    cursor: pointer;
+}
+
+.downloadButton:hover {
+    background-color: rgb(from var(--bg-secondary) calc(r * 1.35) calc(g * 1.35) calc(b * 1.35));
+    border-color: rgb(from var(--bg-secondary) calc(r * 1.5) calc(g * 1.5) calc(b * 1.5));
+}

@@ -1,6 +1,6 @@
 import { Button, OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ConflictResolutionPolicy } from "types/data";
-import { CONFLICT_POLICY_DESCRIPTIONS } from "utils/const";
+import { CONFLICT_POLICY_DESCRIPTIONS } from "utils/meta";
 import { toTitle } from "utils/func";
 
 

@@ -24,6 +24,34 @@ export type ImportDownloadsMessage = z.infer<typeof ImportDownloadsMessage>;
 
 
 /**
+ * Asks the service worker to add any 
+ * number of MediaDownloads to storage.
+ */
+export const AddDownloadsMessage = Message.safeExtend({
+	action: 	z.literal('add-downloads'),
+	payload:	z.record(z.number(), MediaDownload)
+});
+
+export type AddDownloadsMessage = z.infer<typeof AddDownloadsMessage>;
+
+
+/**
+ * Asks the service worker to remove any
+ * number of MediaDownloads from storage by ID
+ */
+export const RemoveDownloadsMessage = Message.safeExtend({
+	action:		z.literal('remove-downloads'),
+
+	/**
+	 * List of media IDs to remove
+	 */
+	payload:	z.array(z.number())
+});
+
+export type RemoveDownloadsMessage = z.infer<typeof RemoveDownloadsMessage>;
+
+
+/**
  * Triggers the clearing of known downloads.
  * This doesn't actually delete the Media.
  */

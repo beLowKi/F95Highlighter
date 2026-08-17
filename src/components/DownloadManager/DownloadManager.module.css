@@ -1,8 +1,14 @@
-@import url('../../styles.css');
+@import url('../../styles.module.css');
 
 .main {
     width: auto;
     height: auto;
+}
+
+.button {
+    width: 100%;
+    height: 50px;
+    font-size: medium;
 }
 
 .pageDownloadToggle {

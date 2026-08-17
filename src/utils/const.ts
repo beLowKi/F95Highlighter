@@ -1,74 +1,5 @@
 import { concatRegex } from "./func";
-import type { ConflictResolutionPolicy, Settings } from "types/data";
 
-/**
- * Default user settings set on initialization.
- */
-export const DEFAULT_SETTINGS: Settings = {
-	searchSampleSize: 5,
-	highlights: {
-		uncertainColor:		'#FF0000',
-		lowCertaintyColor: 	'#FF7700',
-		midCertaintyColor: 	'#FFFF00',
-		highCertaintyColor:	'#00FF00'
-	}
-};
-
-/**
- * Keys used for local storage
- */
-export const LOCAL_STORAGE_KEYS = {
-	DOWNLOADS: "downloads",
-	SETTINGS: "settings",
-} as const;
-
-/**
- * Descriptions of every conflict resolution policy.
- * These are mostly used by the dialogue asking the user
- * how duplicate downloads should be handled
- */
-export const CONFLICT_POLICY_DESCRIPTIONS: Record<ConflictResolutionPolicy, string> = {
-	SKIP: "Skips duplicates; uses first new download if no existing one.",
-	KEEP_MOST_CERTAIN: "Uses the download that matched its f95 media with the highest confidence.",
-	REPLACE: "Uses newest download"
-} as const;
-
-/**
- * Max number of concurrent Media 
- * search queries when importing downloads 
- */
-export const CONCURRENT_SEARCH_LIMIT = 8;
-
-/**
- * Extension name
- * TBD loading this from manifest?
- */
-export const EXT_NAME = "f95Highlighter";
-
-/**
- * Base URL for search results page. Combined with params like query (q), this
- * can search F95 Media.
- *
- * Reference: https://f95zone.to/search/{cache entry id?}/?q={search query}&c[container_only]=1&o=relevance
- *      c[container_only]=1 Marks "Search first posts and titles only"
- *      c[content]=thread only returns thread pages
- *      o=relevance orders the results by relevance.
- *
- * There's a number after /search/ which someone else on f95 guessed might be
- * a cache entry ID? Without it, you're sent to the search form page instead of results,
- * but apparently giving any number > 0 will auto-correct to the valid number.
- */
-export const BASE_SEARCH_URL = "https://f95zone.to/search/1/";
-
-/**
- * Extra parameters that help narrow search requests a bit
- */
-export const EX_SEARCH_PARAMS = "c[title_only]=1&o=relevance";
-
-/**
- * Search parameter that filters for game threads
- */
-export const SEARCH_GAME_FILTER = 'c[child_nodes]=1&c[nodes][0]=2';
 
 /**
  * Finds splits for camel- and title-case strings.
@@ -83,64 +14,19 @@ export const UPPER_CASE_SPLIT_REGEX =
 export const SNAKE_SEGMENT_REGEX = /(?<=.)[_-]+|[_-]+(?=.)/g;
 
 /**
+ * Matches common separators like spaces and snake-case segments
+ */
+export const STR_SEPARATOR_REGEX = new RegExp(` +|(?:${SNAKE_SEGMENT_REGEX.source})`, 'gi');
+
+/**
  * Matches search results page.
  */
 export const SEARCH_RESULTS_PAGE_REGEX =
 	/^https:\/\/f95zone.to\/search\/(?:\d+)/i;
 
 /**
- * Common tokens in downloadable files that make finding their respective
- * Media more difficult. These are usually OS, platform, language,
- * or some other bonus detail that isn't in the title of most Media's thread.
- */
-export const SEARCH_TOKEN_BLACKLIST = new Set([
-	// Platform
-	"f95",
-	"f95zone",
-	"f95cracked",
-	"pc",
-	"patreon",
-	"steam",
-	"steamdlc",
-
-	// Misc modifiers
-	"uncensored",
-	"dlc",
-	"cracked",
-	"collection",
-	"copy",
-
-	// OS
-	"windows",
-	"win",
-	"linux",
-	"window",
-	"win64",
-	"win32",
-
-	// Language
-	"tl",
-	"mtl",
-	"english",
-	"eng",
-	"japanese",
-	"jpn",
-
-	// Status
-	"complete",
-	"demo",
-	"final",
-	"public",
-	"release",
-	"update",
-	"build",
-	"memberversion",
-]);
-
-/**
  * Regex for common delimiters of media downlaods
  */
-// export const SEARCH_TOKEN_DELIMIT_REGEX = /[-_\[\]\(\)\/\\]/g;
 export const SEARCH_TOKEN_DELIMIT_REGEX = /[^a-zA-Z0-9 ]/g;
 
 /**
@@ -158,15 +44,33 @@ export const VERSION_NUMBER_REGEX =
  * Most media downloads I've seen follow this format with their files for some reason.
  */
 export const YEAR_MONTH_DAY_REGEX =
-	/(\d{4})\D*(\d{2}(?!\d))?\D*(\d{2}(?!\d))?/g;
+	new RegExp(
+		`(?:20\\d{2})(?:${SNAKE_SEGMENT_REGEX.source})?` + 
+		`(?:\\d{2})?(?:${SNAKE_SEGMENT_REGEX.source})?(?:\\d{2})?`,
+	'gi');
+
+export const YEAR_TO_YEAR_RANGE_REGEX = 
+	new RegExp(`\\d{4}(?:${STR_SEPARATOR_REGEX.source})?\\d{4}`, 'gi');
+	
+export const MONTH_TO_MONTH_RANGE_REGEX =
+	new RegExp(`(?:\\d{4})?(?:${STR_SEPARATOR_REGEX.source})?\\d{2}(?:(?:(?:${STR_SEPARATOR_REGEX.source})?up)?(?:${STR_SEPARATOR_REGEX.source})?to(?:${STR_SEPARATOR_REGEX.source})?)?(?:\\d{4})?\\d{2}`, 'gi');
 
 /**
  * Matches date ranges which a lot of comics/stills 
  * and animation collections use in their file names
  */
 export const DATE_RANGE_REGEX =
-	new RegExp(`${YEAR_MONTH_DAY_REGEX.source}(?:${SNAKE_SEGMENT_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'gi');
-	
+	// /(\d{4})(?:(?<=.)[_-]+|[_-]+(?=.))?(\d{2})?(?:(?<=.)[_-]+|[_-]+(?=.))?(\d{2})?(?:(?<=.)[_-]+|[_-]+(?=.))?(\d{4})(?:(?<=.)[_-]+|[_-]+(?=.))?(\d{2})?(?:(?<=.)[_-]+|[_-]+(?=.))?(\d{2})?/gi;
+		
+	new RegExp(`(?:${YEAR_MONTH_DAY_REGEX.source})(?:(?:(?:${STR_SEPARATOR_REGEX.source})?up)?(?:${STR_SEPARATOR_REGEX.source})?to(?:${STR_SEPARATOR_REGEX.source})?)?(?:${YEAR_MONTH_DAY_REGEX.source})`, 'gi');
+
+	// [
+	// 	new RegExp(`(?:${YEAR_MONTH_DAY_REGEX.source})(?:(?:(?:${STR_SEPARATOR_REGEX.source})?up)?(?:${STR_SEPARATOR_REGEX.source})?to(?:${STR_SEPARATOR_REGEX.source})?)?(?:${YEAR_MONTH_DAY_REGEX.source})`, 'gi'),
+
+	// 	// YEAR_TO_YEAR_RANGE_REGEX,
+	// 	MONTH_TO_MONTH_RANGE_REGEX		
+	// ].reduce((p, c) => concatRegex(p, c))
+
 /**
  * Matches copied folders based on how Windows formats their names
  */
@@ -206,8 +110,7 @@ export const THREAD_URL_TITLE_REGEX =
  * 1 match anyway but :/.
  */
 export const THREAD_LINK_MEDIA_ID_REGEX = 
-	/(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:.+)$)/i;
-	// /(?<=^(?:https:\/\/f95zone.to)?\/?threads\/[^.]+\.)\d+(?=\/?(?:post-\d+)?$)/i;
+	/(?:(?<=(?:https:\/\/f95zone.to\/)?threads\/[^.]+\.)\d+|(?<=(?:https:\/\/f95zone.to\/)?threads\/)\d+)(?=\/?(?:.+)$)/i;
 
 /**
  * Matches anything inside brackets (including brackets)
@@ -228,9 +131,11 @@ export const EXE_FILENAME_REGEX = /.+\.exe$/gi;
  * Matches DLSite codes which a lot of 
  * games will include in their filenames.
  * 
- * It's just RJ{combination of numbers}
+ * It's just R(G|J|E){combination of numbers}
+ * honestly, I've yet to figure out the second letter and
+ * why it's different sometimes.
  */
-export const DLSITE_CODE_REGEX = /RJ\d+/gi;
+export const DLSITE_CODE_REGEX = /R(?:G|J|E)\d+/i;
 
 /**
  * Contains month-name-matching regexes
@@ -266,26 +171,66 @@ export const HEX_COLOR_REGEX = /(?<!.)#(?:[0-9a-f]{6})(?!.)/i;
  */
 export const RGB_REGEX = /(?<!.)rgb\(([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?([0-2]?(?:[0-4]?[0-9]|5[0-5])), ?[0-2]?(?:[0-4]?[0-9]|5[0-5])\)(?!.)/i;
 
-// Huge list of RegExps which filter out blacklisted
-// tokens when matching imported downloads to thread titles.
-const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
-	/collection|m?tl|f95(?:zone|cracked)?|pc|patreon|steam(?:dlc)?|uncensored|dlc|cracked/gi,
-	/copy|win(?:dows)?|linux|win(?:\d{2})?|demo|final|public|release|update|build/gi,
-	/member(?:\D+)?version|animations?|assorted|compressed|launcher|archives?/gi,
-	new RegExp(`all(?:${SNAKE_SEGMENT_REGEX.source})?in(?:${SNAKE_SEGMENT_REGEX.source})?one`, 'gi'),
-	new RegExp(`(?:not)?(?:${SNAKE_SEGMENT_REGEX.source})?complete`, 'gi'),
-	PART_REGEX,
+
+/**
+ * Combined list of details often included in downloaded files
+ * that aren't the name of the Media: release date, version, platform, etc.
+ * 
+ * The main purpose of this is to filter parts of imported downloads' names
+ * that may make their search less effective because of how strict f95's searching is.
+ * 
+ * Each of these is a separate item wherever possible so that they can be 'joined' 
+ * with a RegExp that puts an optional snake-case segment between them.
+ * 
+ * **NOTES ON ADDING MORE** 
+ * Don't bother adding tags since their combination just uses 'gi' tags.
+ * When using the snake segment regex as part of an item, make sure to use its 'source'.
+ */
+export const IMPORT_TOKEN_BLACKLIST = new Set<RegExp>([
+	// Platform
+	new RegExp(`win(?:dows)?(?:${STR_SEPARATOR_REGEX.source})?(?:\\d{2})?`, 'i'),
+	/linux/,
+	/f95(?:zone)/,
+	/pc/,
+	/patreon/,
+	/steam/,
+	
+	// Release status
+	/demo/,
+	/final/,
+	/public/,
+	/release/,
+	new RegExp(`update(?:${STR_SEPARATOR_REGEX.source})?\\d*`, 'i'),
+	/complete/,
+	new RegExp(`not(?:${STR_SEPARATOR_REGEX.source})?complete`, 'i'),
+	new RegExp(`up(?:${STR_SEPARATOR_REGEX.source})?to`, 'i'),
+	new RegExp(`until(?:${STR_SEPARATOR_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'i'),
+	new RegExp(`build(?:${STR_SEPARATOR_REGEX.source})?` + /\d+/.source, 'i'),
+	new RegExp(`member(?:${STR_SEPARATOR_REGEX.source})?` + /version/.source, 'i'),
+	new RegExp(`all(?:${STR_SEPARATOR_REGEX.source})?in(?:${STR_SEPARATOR_REGEX.source})?one`, 'i'),
 	VERSION_NUMBER_REGEX,
 	YEAR_MONTH_DAY_REGEX,
-	MONTH_REGEX,
 	DATE_RANGE_REGEX,
-	new RegExp(`up(?: |${SNAKE_SEGMENT_REGEX.source})?to`, 'gi'),
-	new RegExp(`until(?:${SNAKE_SEGMENT_REGEX.source})?${YEAR_MONTH_DAY_REGEX.source}`, 'gi'),
-	VOLUME_REGEX
+	PART_REGEX,
+	WINDOWS_COPY_REGEX,
+	MONTH_REGEX,
+	VOLUME_REGEX,
+	
+	// Misc
+	/collection/,
+	/m?tl/,
+	/uncensored/,
+	/dlc/,
+	/cracked/,
+	/copy/,
+	/demo/,
+	/animations?/,
+	/assorted/,
+	/comp(?:ressed)?/,
+	/launcher/,
+	/archives?/,
 ]);
 
-
-// console.log('Concated suffix regex: ', Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source);
 
 /**
  * Matches a detail suffix which many download files and thread titles use.
@@ -295,9 +240,22 @@ const THREAD_TITLE_TOKEN_BLACKLIST = new Set<RegExp>([
  * Something like XX_Collection_up_to_Mar-2020.
  */
 export const DETAIL_SUFFIX_REGEX = new RegExp('(?<=.)' +
-	`(?:(?: |${SNAKE_SEGMENT_REGEX.source})?` +
-	`(?:${Array.from(THREAD_TITLE_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source})` +
-	`(?: |${SNAKE_SEGMENT_REGEX.source})?)+` +
+	`(?:(?:${STR_SEPARATOR_REGEX.source})?` +
+	`(?:${Array.from(IMPORT_TOKEN_BLACKLIST).reduce((p, c) => concatRegex(p, c, '|')).source})` +
+	`(?:${STR_SEPARATOR_REGEX.source})?)+` +
 '$', 'gi');
 
+// DEBUG
 // console.log('Complete regex:', DETAIL_SUFFIX_REGEX.source);
+
+export default {
+	UPPER_CASE_SPLIT_REGEX, SNAKE_SEGMENT_REGEX, SEARCH_RESULTS_PAGE_REGEX,
+	SEARCH_TOKEN_DELIMIT_REGEX, VERSION_NUMBER_REGEX,
+	YEAR_MONTH_DAY_REGEX, DATE_RANGE_REGEX, WINDOWS_COPY_REGEX,
+	NUMBER_NO_PRECEDING_REGEX, PART_REGEX, VOLUME_REGEX,
+	THREAD_URL_REGEX, THREAD_URL_TITLE_REGEX, THREAD_LINK_MEDIA_ID_REGEX,
+	INSIDE_BRACKETS_REGEX, FORUM_REGEX, EXE_FILENAME_REGEX,
+	DLSITE_CODE_REGEX, MONTH_REGEXES, MONTH_REGEX,
+	HEX_COLOR_REGEX, RGB_REGEX, STR_SEPARATOR_REGEX,
+	IMPORT_TOKEN_BLACKLIST, DETAIL_SUFFIX_REGEX,
+}

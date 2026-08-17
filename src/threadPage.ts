@@ -1,14 +1,30 @@
 import { MediaDownload, type Media } from "types/data";
 import type { SaveDownloadMessage, UpdateDownloadMessage } from "types/message";
-import { getUserDownloads, getThreadMedia } from "utils/func";
+import { getOrInitDownloads, getThreadMedia } from "utils/func";
 
 // console.log("thread page content script loaded");
+
+/**
+ * Matches internal links; some are masked via a redirect
+ * page so there's an extra lookahead
+ */
+const INTERNAL_LINK_REGEX = /^https:\/\/f95zone.to\/(?!masked)/i;
+
+/**
+ * Labels of link lists unlikely to be downloads
+ */
+const LINK_LIST_BLACKLIST = /patch(?:es)?|extras?|/i   
+
+/**
+ * Labels of link lists unlikely to be downloads
+ */
+const LINK_NAME_BLACKLIST = /dlsite|ci-en|fantia|pixiv|twitter|steam|website|ko-?fi|itch\.?io|discord|trello|liberapay|patreon|walkthrough|patch|bonus|gog|(?<!.)x(?!.)|bluesky|7zip/i
 
 
 async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     // console.log("Download link clicked");
 
-    const downloads = await getUserDownloads();
+    const downloads = await getOrInitDownloads();
     if ( downloads === null ) {
         console.error('Downloads not initialized');
         return;
@@ -30,7 +46,7 @@ async function handleDownloadLinkClicked(media: Media) : Promise<void> {
     };
 
     // DEBUG
-    console.log(`Existing download: ${JSON.stringify(existingDownload, null, 2)}`);  
+    // console.log(`Existing download: ${JSON.stringify(existingDownload, null, 2)}`);  
     
     let msg: UpdateDownloadMessage | SaveDownloadMessage;
     
@@ -70,20 +86,6 @@ async function main(): Promise<void> {
     }
     
     const linkEls = document.querySelectorAll('article article div span a.link, div.message-userContent article a.link');
-    // console.log(`Found ${linkEls.length} linkEls`);
-
-    // const test = Array.from(linkEls).map(l => l.textContent);
-    // console.log(JSON.stringify(test));
-
-    // Matches internal links; some are masked via a redirect
-    // page so there's an extra lookahead
-    const internalLinkRe = /^https:\/\/f95zone.to\/(?!masked)/i;  
-
-    // Labels of link lists unlikely to be downloads
-    const linkListBlacklist = /patch(?:es)?|extras?|/i          
-
-    // Link names that usually aren't downloads
-    const linkNameBlacklist = /dlsite|ci-en|fantia|pixiv|twitter|steam|website|discord|walkthrough|patch|bonus|patreon|gog|(?<!.)x(?!.)|bluesky|7zip/i
     
     // Filtering unlikely links
     // This could just be a forEach, it's only done like this for the debug log.
@@ -91,7 +93,7 @@ async function main(): Promise<void> {
         const textContent = l.textContent;
 
         // Checking for blacklisted link names
-        if ( linkNameBlacklist.test(textContent) ) {
+        if ( LINK_NAME_BLACKLIST.test(textContent) ) {
             // console.log(`Removed ${textContent} due to blacklisted name`);
             return false;
         }
@@ -99,14 +101,14 @@ async function main(): Promise<void> {
         // Checking if inside blacklisted link list
         const parentEl = l.parentElement;
         const parentLabel = parentEl?.childNodes.item(0).textContent;
-        if ( parentEl?.tagName === 'span' && parentLabel && linkListBlacklist.test(parentLabel) ) {
+        if ( parentEl?.tagName === 'span' && parentLabel && LINK_LIST_BLACKLIST.test(parentLabel) ) {
             // console.log(`Removed ${textContent} due to blacklisted parent label ${parentLabel}`);
             return false;
         }
         
         // Checking if internal link
         const href = l.getAttribute('href');
-        if ( href === null || internalLinkRe.test(href) ) {
+        if ( href === null || INTERNAL_LINK_REGEX.test(href) ) {
             // console.log(`Removed ${textContent} due to internal link ${href}`);
             return false;
         }

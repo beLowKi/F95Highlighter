@@ -1,23 +1,16 @@
 import { Accordion } from "react-bootstrap";
-import { BASE_SEARCH_URL, EX_SEARCH_PARAMS } from "utils/const";
-import { prepSearchQuery } from "utils/func";
 
 import styles from "./InfoScreen.module.css";
+import { getThreadSearchUrl } from "utils/f95";
 
 
 export function InfoScreen(args: {
     fontSize: string
 }) {
 
-    // TODO explain how importing and downloading from threads works
-    // mention that all it's really checking is the name of the item
-    // and trying to match it to Media on f95 using its search feature
-    
-    // Some example search queriesL
+    // Some example searches
     const exampleSearches = ['Furries_Annonymous_Collection_2026-02', 'MyLifeAsGoon-v1.0.12-f95cracked'].map(s => {
-        const query = prepSearchQuery(s);
-        const url = `${BASE_SEARCH_URL}?q=${query}&${EX_SEARCH_PARAMS}`;
-        return [s, url];
+        return [s, getThreadSearchUrl(s)];
     });
     
     return (

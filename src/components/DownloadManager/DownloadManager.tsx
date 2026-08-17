@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePromiseModal } from "@prezly/react-promise-modal";
 
-import { LocalStorage, MediaDownload, type ConflictResolutionPolicy, type ImportResults } from "types/data";
+import { MediaDownload, type ConflictResolutionPolicy, type ImportResults } from "types/data";
 
 import { 
     ClearKnownDownloadsMessage, GetConflictPolicyMessage, ImportStatusMessage, Message, 
@@ -9,16 +9,17 @@ import {
     type ImportDownloadsMessage 
 } from "types/message";
 
-import { EXE_FILENAME_REGEX, LOCAL_STORAGE_KEYS, THREAD_LINK_MEDIA_ID_REGEX, THREAD_URL_REGEX, THREAD_URL_TITLE_REGEX } from "utils/const";
-import { getCurrentTab, getUserDownloads, scrapeSearchResults } from "utils/func";
+import { EXE_FILENAME_REGEX, THREAD_LINK_MEDIA_ID_REGEX, THREAD_URL_REGEX, THREAD_URL_TITLE_REGEX } from "utils/const";
+import { getCurrentTab, getOrInitDownloads, scrapeSearchResults } from "utils/func";
 import ConflictResolutionDialogue from "../ConflictPolicyDialogue/ConflictPolicyDialogue";
-import { Button, ButtonGroup, Image, ProgressBar, Row, Spinner } from "react-bootstrap";
+import { Button, Col, Image, OverlayTrigger, ProgressBar, Row, Spinner, Tooltip } from "react-bootstrap";
 import ImportResultsDisplay from "components/ImportResultsDisplay/ImportResultsDisplay";
 import { waitFor } from "utils";
 
 import checkIcon from "../../../public/icons/check.png";
 import xIcon from "../../../public/icons/remove.png";
 import styles from "./DownloadManager.module.css";
+import meta, { LocalStorage } from "utils/meta";
 
 
 /**
@@ -44,7 +45,9 @@ const DIALOGUE_HEIGHTS = {
  * Handles download-related features of the popup
  * like importing and deleting.
  */
-export function DownloadManager(args: { isBusy?: boolean }) {
+export function DownloadManager(args: { isBusy?: boolean, isUserLoggedIn: boolean }) {
+    const { isUserLoggedIn } = args;
+    
     const [isBusy, setIsBusy] = useState(!!args.isBusy);
     const [importStatus, setImportStatus] = useState<ImportStatusMessage['payload']>()
     const [isThreadPage, setIsThreadPage] = useState(false);
@@ -114,7 +117,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     } 
                     
                     try {
-                        const searchResults = scrapeSearchResults(html);
+                        const searchResults = await scrapeSearchResults(html);
                         // console.log(JSON.stringify(searchResults, null, 2));  // DEBUG
                         
                         sendResponse(searchResults);
@@ -131,7 +134,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                 // **NOTE** response may be undefined if user cancelled without
                 // selecting a policy
                 case GetConflictPolicyMessage.shape.action.value:
-                    console.log('Getting conflict resolution policy');
+                    // console.log('Getting conflict resolution policy');
 
                     const { 
                         error: confErr, 
@@ -188,8 +191,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                         return false;
                     }
                     
-                    // TODO update progress bar
-                    console.log(`Heartbeat:\n${JSON.stringify(payload, null, 2)}`);
+                    // console.log(`Heartbeat:\n${JSON.stringify(payload, null, 2)}`);
                     setImportStatus(status);
                         
                     break;
@@ -197,11 +199,10 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             }
         };
         
-        // TODO should update pageDownload
         // when download storage changes
         const storageListener = async ( changes: { [key: string]: chrome.storage.StorageChange } ) => {
-            if ( LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
-                const { newValue } = changes[LOCAL_STORAGE_KEYS.DOWNLOADS];
+            if ( meta.LOCAL_STORAGE_KEYS.DOWNLOADS in changes ) {
+                const { newValue } = changes[meta.LOCAL_STORAGE_KEYS.DOWNLOADS];
                 
                 const { data: downloads, error, success } = 
                     LocalStorage.shape.downloads.safeParse(newValue);
@@ -211,7 +212,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     return;
                 }
 
-                console.log(JSON.stringify(newValue, null, 2));
+                // console.log(JSON.stringify(newValue, null, 2));
                 
                 await checkThreadPage(downloads);
             }
@@ -237,7 +238,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
      * updates display if it is
      */
     async function checkThreadPage(userDownloads?: LocalStorage['downloads']): Promise<void> {
-        console.log('Re-checking current tab');
+        // console.log('Re-checking current tab');
         
         const tab = await getCurrentTab();
 
@@ -248,7 +249,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         
         // Checking if tab has valid thread page URL
         if ( !THREAD_URL_REGEX.test(tab.url) ) {
-            console.error(`${tab.url} did not match thread URL regex`);
+            // console.error(`${tab.url} did not match thread URL regex`);
             return;
         }
 
@@ -267,7 +268,7 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         // Getting download to update content
         const downloads = (!!userDownloads) 
             ? userDownloads
-            : await getUserDownloads();
+            : await getOrInitDownloads();
         
         const d = downloads[+mediaId];
         setPageDownload((!!d) ? d : null);
@@ -284,14 +285,13 @@ export function DownloadManager(args: { isBusy?: boolean }) {
         
         try {
             directory = await window.showDirectoryPicker(DIR_SELECT_OPTIONS);
-
         } catch (error) {
             console.error(`Unexpected Error: ${error}`);
             setIsBusy(false);
             return;
         }
         
-        console.log(`Selected directory ${directory.name}`);
+        // console.log(`Selected directory ${directory.name}`);
 
         const items = new Set<string>();
 
@@ -304,27 +304,6 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                 items.add(item.name.replace(/\.exe/i, ''));
             }
         }
-        
-        // TBD and TODO this better
-        // switch (importMode) {
-        //     case ImportMode.FULL:
-        //         break;
-
-        //     // Filtering out existing downloads
-        //     case ImportMode.NEW_ONLY:
-        //         const downloads: Record<number, MediaDownload> = 
-        //             await chrome.storage.local.get(LOCAL_STORAGE_KEYS.DOWNLOADS);
-
-        //         const records = Object.values(downloads);
-        //         records.sort((a, b) => a.name.localeCompare(b.name));
-                
-        //         items = items.filter( i => !!binSearch(records, (r) => i.localeCompare(r.name)) );
-                
-        //         break;
-        
-        //     default:
-        //         throw new Error(`Unhandled ImportMode: ${importMode}`);
-        // }
         
         // console.log(`Found sub-directories:\n${JSON.stringify(Array.from(items), null, 2)}`);
 
@@ -367,11 +346,9 @@ export function DownloadManager(args: { isBusy?: boolean }) {
      * Handles when the user toggles the download status of a thread's Media.
      */
     async function handleDownloadToggle(): Promise<void> {
-        const downloads = await getUserDownloads();
+        const downloads = await getOrInitDownloads();
         
         if ( pageDownload === null ) {
-            console.log('Creating download');
-            
             // let media: Media | null | undefined;
             const tab = await getCurrentTab();
             
@@ -411,20 +388,20 @@ export function DownloadManager(args: { isBusy?: boolean }) {
             }
             
             // DEBUG
-            console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
+            // console.log(`Created Download:\n${JSON.stringify(download, null, 2)}`);
             
             setPageDownload(download);
             downloads[download.media.mediaId] = download;
     
         } else {
-            console.log('Deleting download');            
+            // console.log('Deleting download');            
             delete downloads[pageDownload.media.mediaId];
             setPageDownload(null);
         }
 
         // Updating storage
         await chrome.storage.local.set({
-            [LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads
+            [meta.LOCAL_STORAGE_KEYS.DOWNLOADS]: downloads
         });
     }  
 
@@ -458,6 +435,16 @@ export function DownloadManager(args: { isBusy?: boolean }) {
     
     // Standard content for deleting and importing    
     } else {
+        const importButton = (
+            <Button id="import-button" 
+                className={styles.button}
+                variant="outline-primary"
+                onClick={handleImportDownloads} 
+                disabled={!isUserLoggedIn}>
+                Import
+            </Button>
+        );
+        
         content = (
             <div className="container p-0">
                 {isThreadPage
@@ -482,14 +469,30 @@ export function DownloadManager(args: { isBusy?: boolean }) {
                     : null}
                 
                 <Row className="p-1">
-                    <ButtonGroup size="sm">
-                        <Button id="import-button" onClick={handleImportDownloads} type="submit">
-                            Import Downloads
+                    <Col>
+                        {
+                            isUserLoggedIn
+                                ? importButton
+
+                                : <OverlayTrigger
+                                    overlay={<Tooltip>Not logged in to f95; importing not possible</Tooltip>}
+                                    delay={{ show: 350, hide: 250 }}>
+
+                                    <div>{importButton}</div>
+
+                                </OverlayTrigger>
+                        }
+                    </Col>
+                    
+                    <Col>
+                        <Button 
+                            id="delete-downloads" 
+                            className={styles.button} 
+                            variant="outline-danger"
+                            onClick={handleDeleteDownloads}>
+                            Delete
                         </Button>
-                        <Button id="delete-downloads" onClick={handleDeleteDownloads} type="reset">
-                            Delete Downloads
-                        </Button>
-                    </ButtonGroup>
+                    </Col>
                 </Row>
 
             </div>

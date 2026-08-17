@@ -1,42 +1,38 @@
 # F95 Highlighter
 
-## FIXME
+This project is a chrome/opera extension that tracks media downloaded from
+f95zone.to and highlights their displays on the site. For example:
 
-### Apostrophe Problems
+![Shows a grid of media tiles with the center one bordered in bright green](./public/examples/latestUpdatesExample1.png)
 
-f95 searches are VERY specific about apostrophes; e.g., "q=sister+maries" doesn't correctly return results for "Sister Marie's Mission" but "q=sister+marie%27s" does. In this case, searching for just "sister+marie" (dropping the s) does include the correct thread when not searching by titles only but it isn't the first result.
+Here, the game "Nekotto Island" is flagged as downloaded with a high certainty (which is discussed later), so it has a bright green border. The purpose of which is to make it easier to tell what you have and haven't downloaded from the site without needing to check your files each time.
 
-This might? be fixable by not searching by titles only, but it makes results less likely to be relevant. A workaround would be filtering by the expected forum-- Game, Comics & Stills, or Animations--but that would probably require some more user input to prevent just checking all 3.
+## Getting Downloads
 
-Could have dialogue to select which forum each import should be on, but that could get ugly with 100+ imports (like I would have).
+There are 2 ways to tell the extension what you've downloaded: importing and adding them manually.
 
-### Camel-Case inconsistency
+### Importing
 
-Currently, download files are tokenized, in part, by splitting camel-case tokens; i.e, aCamelCaseString -> a camel case string. However, not all files or thread titles with capital letters in the middle of a token are using camel case. For example, "ViciousFox Collection" has a download file named ViciousFox_Collection. While "viciousfox" works, searching for "vicious fox" won't because f95's search system is VERY strict.
+When you import, all you're doing is giving the extension the name(s) of folder and/or files you've downloaded (assumedly from f95zone) and it'll try and match that name to f95 media. Other than their name, nothing is actually read or "imported" into the extension. What it does is convert each name to a search query, send it to f95zone, then check which results match the query the best. For some example searches:
 
-This leads to more failed imports because some's thread use camel-case always and others don't. A brute force solution would be checking both--potentially doubling the number of searches each import needs to do, not to mention when there are multiple camel case splits that the thread's title may or may not do as well.
+Furries_Annonymous_Collection_2026-02 -> <https://f95zone.to/search/1/?q=furries+annonymous&c[title_only]=1&o=relevance>
 
-## TODO
+MyLifeAsGoon-v1.0.12-f95cracked -> <https://f95zone.to/search/1/?q=my+life+as+goon&c[title_only]=1&o=relevance>
 
-### Train/Tune an AI to Match Download Files to Thread Titles
+Doing this will every item gives a (somewhat) reliable way to import downloads based purely on their filename. However, it is far from perfect. This whole process relies on threads' titles being VERY similar to their filenames, when often isn't the case. Things like abbreviations, mispellings, or even just apostrophes hinder the success rate of importing. From what I've seen, this is more of a problem with games, but it is a BIG problem. I've had bulk game imports with a success rate of less than 50%. To help with this, other methods of flagging downloads are much more reliable.
 
-It would probably be much more reliable to use an AI to match download files to threads, but it'd be more complicated to implement. This would involve either making an AI from scratch--and figuring out how the extension would communicate with it--or tuning an existing one which adds costs unless there's a free tunable AI service out there?
+### Manually Flagging Downloads
 
-### Testing
+#### Threads
 
-- Figure out how to do automated tests for chrome extensions
-- Log failed search queries to a file with entries formattes as "{directory item name} -> {URL}"
+This one's simple. When you're on a thread page, the popup includes a button to flag its media as downloaded. There's also a dialogue when clicking any download link. This dialogue works for new downloads and for updating imported ones. For example, if you imported a download with 60% certainty, but you click a link on its page, the extension offers to update its info--assuming that your downloading means the match is correct. Either of which results in a 100% certainty download.
 
-### Deleted & Updated Downloads
+#### LatestUpdates
 
-I'd like for the extension to show when users USED to have any particular media downloaded but have deleted it OR if their version is older. That way, there could be different visuals for media that have never been downloaded vs. ones that were but have since been removed. Both are difficult for different reasons.
+TODO
 
-#### Deleted Downloads
+In addition to highlighting flagged downloads, the latest updates page also supports one-click download flagging and unflagging without needing to open a thread. Downloads added this way are always 100%.
 
-For security reasons, chrome extensions can't read user files unless explicitly given permission via those file/directory selector popups. This complicates checking when downloads are deleted.
+## Attributions
 
-#### Updates
-
-While it's not uncommon for game's download files to include their version number, it is inconsistent--not to mention this wouldn't work for comics and animations. A simple solution would be to scrape that information from the threadpage, but it would add another fetch request to the import process. Every import would need to wait for both their search results and their threadpage request. I don't know how much longer that'd make importing.
-
-For visuals, I'm thinking update the text content of the version/release element on every media tile. Could either show the exact version number the user has for direct comparison or simply change the text to green and add a "+" to show that it's a newer version. Maybe there could even be a list at the top of the page for updated media so you don't have to scroll down to check?
+Huge thanks to [luqmanoop](https://github.com/luqmanoop) for their [bun-chrome-extension](https://github.com/luqmanoop/bun-chrome-extension) template! I really wanted to use Bun and Typescript for this, and their template made that so much easier.
